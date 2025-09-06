@@ -845,7 +845,6 @@ list_nginx_sites() {
         print_message "warn" "$MSG_NO_WEBSITES_FOUND"
         return 1
     fi
-
     print_message "info" "$MENU_LIST_WEBSITES_HEADER"
     for site in $all_sites; do
         local symlink_path="$sites_enabled/$site"

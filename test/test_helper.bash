@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Load testing libraries from the vendored location
 load 'libs/bats-support/load'
 load 'libs/bats-assert/load'
