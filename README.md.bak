@@ -1,0 +1,188 @@
+# GCP Mail & WordPress Server Setup Guide
+
+This guide provides all the necessary steps to deploy a full-featured mail server and a WordPress website on a single, cost-effective Google Cloud Platform (GCP) virtual machine.
+
+The process is divided into two main phases:
+1.  **Manual GCP & DNS Setup:** You will first configure the necessary infrastructure on the GCP console and at your domain registrar.
+2.  **Automated Server Setup:** You will then run a shell script on the VM that automates the installation and configuration of all required software.
+
+---
+
+## Part 1: GCP Prerequisites
+
+Log in to your [GCP Console](https://console.cloud.google.com/) and perform the following actions.
+
+### 1.1. Create the VM Instance
+
+We will create a VM instance that is eligible for the GCP "Free Tier".
+
+1.  Navigate to **Compute Engine > VM instances**.
+2.  Click **CREATE INSTANCE**.
+3.  Use the following configuration:
+    *   **Name:** A descriptive name, e.g., `mail-wordpress-server`.
+    *   **Region:** A US region eligible for the free tier, e.g., `us-west1` (Oregon).
+    *   **Series:** `E2`.
+    *   **Machine type:** `e2-micro`.
+    *   **Boot disk:**
+        *   **OS:** `Debian` (latest stable version, e.g., Debian 12).
+        *   **Size:** `30` GB.
+    *   **Firewall:** Check both `Allow HTTP traffic` and `Allow HTTPS traffic`.
+4.  Click **Create**.
+
+### 1.2. Reserve a Static IP Address
+
+A mail server requires a fixed IP address.
+
+1.  Navigate to **VPC network > IP addresses**.
+2.  Find the IP address of your newly created VM (listed as "Type: Ephemeral").
+3.  Click **RESERVE**.
+4.  Give the static IP a name (e.g., `mail-server-ip`) and confirm. The type will change to "Static". **Take note of this IP address.**
+
+### 1.3. Configure Firewall Rules
+
+Open the necessary ports for mail services.
+
+1.  Navigate to **VPC network > Firewall**.
+2.  Click **CREATE FIREWALL RULE** for each of the rules below.
+3.  For each rule, use these settings:
+    *   **Direction:** `Ingress`.
+    *   **Targets:** `Specified target tags`.
+    *   **Target tags:** `http-server` and `https-server` (these tags are automatically applied to your VM).
+    *   **Source IPv4 ranges:** `0.0.0.0/0`.
+    *   **Protocols and ports:** `Specified protocols and ports`.
+
+    **Rules to Create:**
+    *   **Name:** `allow-smtp` -> **tcp:** `25`, `587`
+    *   **Name:** `allow-smtps` -> **tcp:** `465`
+    *   **Name:** `allow-imaps` -> **tcp:** `993`
+
+---
+
+## Part 2: DNS Pre-configuration
+
+Before running the script, you must configure essential DNS records at your domain registrar. Replace `YOUR_STATIC_IP` with the IP address you reserved.
+
+*   **A Record for the mail server hostname:**
+    *   **Type:** `A`
+    *   **Name/Host:** `box`
+    *   **Value:** `YOUR_STATIC_IP`
+
+*   **A Record for the main domain:**
+    *   **Type:** `A`
+    *   **Name/Host:** `@` (or your root domain)
+    *   **Value:** `YOUR_STATIC_IP`
+
+*   **MX Record for mail delivery:**
+    *   **Type:** `MX`
+    *   **Name/Host:** `@`
+    *   **Value:** `box.yourdomain.com` (e.g., `box.example.com`)
+    *   **Priority:** `10`
+
+The setup script will later instruct you on creating additional records (SPF, DKIM, etc.) from the Mail-in-a-Box admin panel.
+
+---
+
+## Part 3: Connecting via SSH (PuTTY for Windows)
+
+### 3.1. Generate SSH Keys with PuTTYgen
+
+1.  Open `puttygen.exe`.
+2.  Click **Generate** and move your mouse to generate randomness.
+3.  In the `Key comment` field, enter a simple username (e.g., `debian`).
+4.  Save both keys:
+    *   **Save public key:** name it `gcp_key.pub`.
+    *   **Save private key:** name it `gcp_key.ppk`.
+5.  Copy the entire public key text from the top text box.
+
+### 3.2. Add Your Public Key to the VM
+
+1.  In the GCP console, go to your VM's details page and click **EDIT**.
+2.  Scroll down to the "SSH Keys" section and click **ADD ITEM**.
+3.  Paste your public key. The username (`debian`) should appear on the right.
+4.  **Save** the changes to the VM.
+
+### 3.3. Configure PuTTY to Connect
+
+1.  Open `putty.exe`.
+2.  **Session:**
+    *   `Host Name (or IP address)`: Enter your server's static IP address.
+    *   `Saved Sessions`: Give the session a name (e.g., "GCP Server") and click **Save**.
+3.  **Connection > SSH > Auth > Credentials:**
+    *   Click **Browse...** and select your private key file (`gcp_key.ppk`).
+4.  Return to **Session**, and click **Save** again.
+5.  Click **Open**. Accept the security alert on the first connection.
+6.  When prompted `login as:`, enter the username you set (`debian`).
+
+---
+
+## Part 4: Running the Setup Script
+
+Once connected to your server via SSH:
+
+1.  **Download the script:**
+    ```bash
+    wget https://raw.githubusercontent.com/path/to/your/repo/setup-server.sh
+    # Note: You will need to upload the script to a repository like GitHub to get a raw URL.
+    # Alternatively, you can use 'scp' or copy-paste the content using 'nano'.
+    ```
+
+2.  **Make the script executable:**
+    ```bash
+    chmod +x setup-server.sh
+    ```
+
+3.  **Edit the configuration variables:**
+    *   Open the script: `nano setup-server.sh`.
+    *   Change the `DOMAIN` and `EMAIL` variables at the top of the file.
+    *   Save and exit (`Ctrl+X`, `Y`, `Enter`).
+
+4.  **Run the script:**
+    ```bash
+    sudo ./setup-server.sh
+    ```
+
+---
+
+## Part 5: Post-Installation Steps
+
+The script automates most of the setup, but some steps are interactive or require manual verification.
+
+1.  **Mail-in-a-Box Interactive Setup:** The script will launch the Mail-in-a-Box setup, which will ask you to confirm your email and set your timezone.
+2.  **MariaDB Secure Installation:** The script will launch `mysql_secure_installation`. Follow the prompts to set a root password for your database.
+3.  **Final DNS Configuration:** After the script finishes, log in to your Mail-in-a-Box admin panel at `https://box.yourdomain.com/admin`. Go to the "System > External DNS" page and add all the remaining DNS records listed there.
+4.  **WordPress Final Installation:**
+    *   Navigate to `https://yourdomain.com` in your browser.
+    *   Follow the on-screen instructions to choose a language, name your site, and create your WordPress admin user.
+
+---
+
+## Part 6: Server Management
+
+The setup script includes features for easier long-term server management.
+
+### 6.1. Automatic Security Updates
+
+The `setup-server.sh` script automatically installs and configures the `unattended-upgrades` package. This means your server will check for and install important security updates in the background without any manual intervention.
+
+### 6.2. Managing Services
+
+A simple management script, `manage-services.sh`, is provided to easily control your server's main functions. You must download this script separately or create it from the repository.
+
+**Usage:**
+
+Make the script executable first:
+`chmod +x manage-services.sh`
+
+Then, run it with `sudo`:
+
+*   **To stop the web services (WordPress):**
+    `sudo ./manage-services.sh stop web`
+
+*   **To start the mail services:**
+    `sudo ./manage-services.sh start mail`
+
+*   **To check the status of all services:**
+    `sudo ./manage-services.sh status all`
+
+**Available Commands:** `start`, `stop`, `restart`, `status`
+**Available Service Groups:** `web`, `mail`, `all`
