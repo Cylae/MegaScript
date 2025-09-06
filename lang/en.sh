@@ -259,3 +259,13 @@ MENU_MGMT_OPTION_2="2. Manage SFTP Users"
 MENU_MGMT_OPTION_3="3. Manage Email Accounts"
 MENU_MGMT_OPTION_4="4. Back to Main Menu"
 MSG_RETURN_TO_MAIN_MENU="Returning to main menu."
+
+# --- Validation ---
+MSG_ERROR_INVALID_INPUT="Invalid input."
+MSG_ERROR_INVALID_DOMAIN="Invalid domain name format."
+MSG_ERROR_INVALID_EMAIL="Invalid email address format."
+MSG_ERROR_INVALID_USERNAME="Invalid username. Must start with a letter and contain only letters, numbers, hyphens, or underscores."
+MSG_ERROR_INVALID_PATH="Invalid path. Must be an absolute path (start with /)."
+MSG_ERROR_INVALID_DB_NAME="Invalid database name. Only letters, numbers, and underscores are allowed."
+MSG_ERROR_CANNOT_BE_EMPTY="This field cannot be empty."
+MSG_WARN_SFTP_CONF_EXISTS="SFTP configuration for user '%s' already exists. Skipping SSH configuration."

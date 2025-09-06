@@ -1,6 +1,6 @@
 # Unified Server Setup & Management Script
 
-**Author:** Jules
+**Author:** Cylae
 **Version:** 2.0
 
 ---
@@ -22,8 +22,10 @@ It simplifies complex tasks like setting up a LEMP stack, creating websites with
 *   **Secure SFTP Users**: Create new users who are restricted (jailed) to a specific directory and can only connect via SFTP, not SSH. Perfect for giving clients or developers access to manage web files securely.
 *   **Security Hardening**: Installs and configures **Fail2ban** to protect against brute-force attacks on services like SSH, Postfix, and Dovecot.
 *   **Robust Configuration**: Uses `augtool` and `postconf` instead of fragile `sed` commands for safer and more reliable configuration changes.
+*   **Idempotent Operations**: Many operations, like creating SFTP users, are now idempotent, meaning they can be run multiple times without causing errors.
+*   **Enhanced Input Validation**: User input is validated to prevent common errors and ensure data integrity.
 *   **Backup & Restore**: A simple yet powerful utility to back up a website's files and its database into a single archive. A restore function with built-in safety checks is also included.
-*   **Automated Testing**: Comes with a test suite built with `bats` to ensure reliability and prevent regressions.
+*   **Expanded Automated Testing**: The test suite (built with `bats`) has been expanded to cover critical functionalities like backups, restores, and website management, ensuring high reliability.
 
 ### ✅ Prerequisites & Dependencies
 
@@ -62,12 +64,16 @@ It simplifies complex tasks like setting up a LEMP stack, creating websites with
 This project includes an automated test suite using `bats`. The tests are located in the `test/` directory.
 
 **To run the tests:**
-1.  Ensure you have `bats` installed (the script will try to install it if you run the testing option, but you can also install it manually: `sudo apt-get install bats`).
-2.  Run the tests from the root of the project directory:
+1.  Ensure you have `bats`, `mariadb-server`, and `nginx` installed. You can install them with `sudo apt-get install bats mariadb-server nginx`.
+2.  Run the tests from the root of the project directory. You can run a specific test file or all tests at once.
     ```bash
+    # Run all tests
+    sudo bats test/
+
+    # Run a specific test file
     sudo bats test/test_sftp.bats
     ```
-    *Note: `sudo` is required because the tests perform real system operations like creating users and modifying configuration files.*
+    *Note: `sudo` is required because the tests perform real system operations like creating users, managing services, and modifying configuration files.*
 
 ### 📋 Menu Options Explained
 
@@ -128,8 +134,10 @@ Il simplifie des tâches complexes telles que la mise en place d'une pile LEMP, 
 *   **Utilisateurs SFTP Sécurisés**: Créez de nouveaux utilisateurs qui sont restreints (emprisonnés ou "jailed") à un répertoire spécifique et ne peuvent se connecter que via SFTP, pas en SSH. Parfait pour donner un accès sécurisé à des clients ou des développeurs pour gérer les fichiers d'un site.
 *   **Renforcement de la Sécurité**: Installe et configure **Fail2ban** pour protéger contre les attaques par force brute sur des services comme SSH, Postfix et Dovecot.
 *   **Configuration Robuste**: Utilise `augtool` et `postconf` au lieu de commandes `sed` fragiles pour des modifications de configuration plus sûres et plus fiables.
+*   **Opérations Idempotentes**: De nombreuses opérations, comme la création d'utilisateurs SFTP, sont désormais idempotentes, ce qui signifie qu'elles peuvent être exécutées plusieurs fois sans provoquer d'erreurs.
+*   **Validation d'Entrée Améliorée**: Les entrées de l'utilisateur sont validées pour éviter les erreurs courantes et garantir l'intégrité des données.
 *   **Sauvegarde & Restauration**: Un utilitaire simple mais puissant pour sauvegarder les fichiers d'un site web et sa base de données dans une seule archive. Une fonction de restauration avec des mesures de sécurité intégrées est également incluse.
-*   **Tests Automatisés**: Fourni avec une suite de tests construite avec `bats` pour assurer la fiabilité et prévenir les régressions.
+*   **Tests Automatisés Étendus**: La suite de tests (construite avec `bats`) a été étendue pour couvrir les fonctionnalités critiques telles que les sauvegardes, les restaurations et la gestion de sites web, garantissant une grande fiabilité.
 
 ### ✅ Prérequis & Dépendances
 
@@ -168,12 +176,16 @@ Il simplifie des tâches complexes telles que la mise en place d'une pile LEMP, 
 Ce projet inclut une suite de tests automatisés utilisant `bats`. Les tests se trouvent dans le répertoire `test/`.
 
 **Pour exécuter les tests :**
-1.  Assurez-vous que `bats` est installé (le script essaiera de l'installer si vous exécutez l'option de test, mais vous pouvez aussi l'installer manuellement : `sudo apt-get install bats`).
-2.  Exécutez les tests depuis la racine du répertoire du projet :
+1.  Assurez-vous que `bats`, `mariadb-server` et `nginx` sont installés. Vous pouvez les installer avec `sudo apt-get install bats mariadb-server nginx`.
+2.  Exécutez les tests depuis la racine du répertoire du projet. Vous pouvez exécuter un fichier de test spécifique ou tous les tests en même temps.
     ```bash
+    # Exécuter tous les tests
+    sudo bats test/
+
+    # Exécuter un fichier de test spécifique
     sudo bats test/test_sftp.bats
     ```
-    *Note : `sudo` est requis car les tests effectuent de réelles opérations système comme la création d'utilisateurs et la modification de fichiers de configuration.*
+    *Note : `sudo` est requis car les tests effectuent de réelles opérations système comme la création d'utilisateurs, la gestion des services et la modification de fichiers de configuration.*
 
 ### 📋 Explication des Options du Menu
 
