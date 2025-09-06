@@ -660,14 +660,421 @@ show_main_menu() {
     print_message "info" "      Server Setup & Management Menu"
     print_message "info" "============================================="
     echo
+    echo " --- Initial Setup ---"
     echo "  1. Initial Server Setup (Update, Firewall, LEMP)"
     echo "  2. Add New Website (with SSL)"
     echo "  3. Setup Mail Server (Postfix & Dovecot)"
     echo "  4. Create SFTP User"
-    echo "  5. Backup Server/Website"
-    echo "  6. Restore Server/Website"
-    echo "  7. Exit"
     echo
+    echo " --- Utilities ---"
+    echo "  5. Backup Website"
+    echo "  6. Restore Website"
+    echo
+    echo " --- Management ---"
+    echo "  7. Manage Existing Services"
+    echo "  8. Exit"
+    echo
+}
+
+# --- Website Management Functions ---
+
+# Lists Nginx sites based on status (enabled, disabled, or all)
+list_nginx_sites() {
+    local status=$1 # "enabled", "disabled", or "all"
+    local sites_available="/etc/nginx/sites-available"
+    local sites_enabled="/etc/nginx/sites-enabled"
+
+    # Exclude default config and ensure directory exists
+    if [ ! -d "$sites_available" ]; then return; fi
+    local all_sites=$(ls "$sites_available" | grep -v "default" || true)
+
+    if [ -z "$all_sites" ]; then
+        print_message "warn" "No website configurations found."
+        return 1
+    fi
+
+    print_message "info" "--- Available Websites ---"
+    for site in $all_sites; do
+        local symlink_path="$sites_enabled/$site"
+        if [[ "$status" == "enabled" && -L "$symlink_path" ]]; then
+            echo "  - $site (Enabled)"
+        elif [[ "$status" == "disabled" && ! -L "$symlink_path" ]]; then
+            echo "  - $site (Disabled)"
+        elif [[ "$status" == "all" ]]; then
+            if [ -L "$symlink_path" ]; then
+                echo "  - $site (Enabled)"
+            else
+                echo "  - $site (Disabled)"
+            fi
+        fi
+    done
+    echo "------------------------"
+    return 0
+}
+
+# Deletes a website completely
+delete_website() {
+    print_message "info" "--- Delete Website ---"
+    list_nginx_sites "all" || return
+
+    read -p "Enter the full config name of the website to delete (e.g., example.com.conf): " site_conf
+    local domain=$(basename "$site_conf" .conf)
+
+    if [ -z "$site_conf" ] || [ ! -f "/etc/nginx/sites-available/$site_conf" ]; then
+        print_message "error" "Invalid selection or config file not found."
+        return
+    fi
+
+    print_message "warn" "This will permanently delete the Nginx config, web files at /var/www/$domain, the SSL certificate, and optionally the database."
+    read -p "To confirm, please type the domain name '$domain': " confirmation
+    if [ "$confirmation" != "$domain" ]; then
+        print_message "error" "Confirmation failed. Deletion cancelled."
+        return
+    fi
+
+    # Delete Nginx files
+    rm -f "/etc/nginx/sites-available/$site_conf"
+    rm -f "/etc/nginx/sites-enabled/$site_conf"
+    print_message "info" "Nginx configuration removed."
+
+    # Delete web root
+    if [ -d "/var/www/$domain" ]; then
+        rm -rf "/var/www/$domain"
+        print_message "info" "Web root directory /var/www/$domain removed."
+    fi
+
+    # Delete SSL certificate
+    if command -v certbot &> /dev/null; then
+        certbot delete --non-interactive --cert-name "$domain" &>/dev/null || print_message "warn" "Could not delete SSL certificate for $domain. It may not exist."
+        print_message "info" "SSL certificate for $domain deletion attempted."
+    fi
+
+    # Delete database
+    read -p "Do you want to delete the associated database? [y/N]: " del_db
+    if [[ "$del_db" =~ ^[yY](es)?$ ]]; then
+        read -p "Enter the database name to delete: " db_name
+        if [ -n "$db_name" ]; then
+            if [ ! -f "/root/.mysql_root_password" ]; then
+                print_message "error" "MariaDB root password file not found. Cannot automate database deletion."
+            else
+                local db_root_pw=$(cat /root/.mysql_root_password)
+                mysql -u root -p"${db_root_pw}" -e "DROP DATABASE IF EXISTS \`${db_name}\`;"
+                print_message "info" "Database '$db_name' deleted."
+            fi
+        fi
+    fi
+
+    systemctl reload nginx
+    print_message "success" "Website '$domain' has been completely deleted."
+}
+
+# Disables an active Nginx site
+disable_website() {
+    print_message "info" "--- Disable Website ---"
+    list_nginx_sites "enabled" || return
+
+    read -p "Enter the config name of the site to disable: " site_conf
+    if [ -z "$site_conf" ] || [ ! -L "/etc/nginx/sites-enabled/$site_conf" ]; then
+        print_message "error" "Invalid selection or site is not enabled."
+        return
+    fi
+
+    rm -f "/etc/nginx/sites-enabled/$site_conf"
+    systemctl reload nginx
+    print_message "success" "Site '$site_conf' has been disabled."
+}
+
+# Enables an inactive Nginx site
+enable_website() {
+    print_message "info" "--- Enable Website ---"
+    list_nginx_sites "disabled" || return
+
+    read -p "Enter the config name of the site to enable: " site_conf
+    if [ -z "$site_conf" ] || [ ! -f "/etc/nginx/sites-available/$site_conf" ] || [ -L "/etc/nginx/sites-enabled/$site_conf" ]; then
+        print_message "error" "Invalid selection or site is already enabled."
+        return
+    fi
+
+    ln -s "/etc/nginx/sites-available/$site_conf" "/etc/nginx/sites-enabled/"
+    systemctl reload nginx
+    print_message "success" "Site '$site_conf' has been enabled."
+}
+
+# Main function for website management sub-menu
+manage_websites() {
+    while true; do
+        clear
+        print_message "info" "--- Website Management Menu ---"
+        list_nginx_sites "all" || { read -n 1 -s -r -p "Press any key to return..."; break; }
+        echo
+        echo "  1. Delete a Website"
+        echo "  2. Disable a Website"
+        echo "  3. Enable a Website"
+        echo "  4. Back to Management Menu"
+        echo
+        read -rp "Enter your choice [1-4]: " choice
+        case $choice in
+            1) delete_website ;;
+            2) disable_website ;;
+            3) enable_website ;;
+            4) break ;;
+            *) print_message "warn" "Invalid option." ;;
+        esac
+        read -n 1 -s -r -p "Press any key to continue..."
+    done
+}
+
+# --- SFTP User Management Functions ---
+
+# Lists SFTP users by parsing sshd_config
+list_sftp_users() {
+    print_message "info" "--- Jailed SFTP Users ---"
+    # This grep command uses a Perl-compatible regex to find usernames after "Match User"
+    local users=$(grep -oP '(?<=^Match User\s)\S+' /etc/ssh/sshd_config || true)
+    if [ -z "$users" ]; then
+        print_message "warn" "No SFTP users configured in /etc/ssh/sshd_config."
+        return 1
+    fi
+    for user in $users; do
+        echo "  - $user"
+    done
+    echo "-------------------------"
+    return 0
+}
+
+# Changes the password for an SFTP user
+change_sftp_password() {
+    print_message "info" "--- Change SFTP User Password ---"
+    list_sftp_users || return
+
+    read -p "Enter the username to modify: " sftp_user
+    if [ -z "$sftp_user" ]; then
+        print_message "error" "Username cannot be empty."
+        return
+    fi
+
+    # Verify user exists in the SFTP config
+    if ! grep -q "^Match User $sftp_user" /etc/ssh/sshd_config; then
+        print_message "error" "User '$sftp_user' is not a configured SFTP user."
+        return
+    fi
+
+    read -s -p "Enter the new password for $sftp_user: " sftp_password
+    echo
+    if [ -z "$sftp_password" ]; then
+        print_message "error" "Password cannot be empty."
+        return
+    fi
+
+    echo "$sftp_user:$sftp_password" | chpasswd
+    print_message "success" "Password for '$sftp_user' has been changed."
+}
+
+# Deletes an SFTP user and their configuration
+delete_sftp_user() {
+    print_message "info" "--- Delete SFTP User ---"
+    list_sftp_users || return
+
+    read -p "Enter the username to delete: " sftp_user
+    if [ -z "$sftp_user" ]; then
+        print_message "error" "Username cannot be empty."
+        return
+    fi
+
+    # Verify user exists in the SFTP config
+    if ! grep -q "^Match User $sftp_user" /etc/ssh/sshd_config; then
+        print_message "error" "User '$sftp_user' is not a configured SFTP user."
+        return
+    fi
+
+    print_message "warn" "This will permanently delete the user '$sftp_user' and their SFTP configuration."
+    read -p "To confirm, please type the username '$sftp_user': " confirmation
+    if [ "$confirmation" != "$sftp_user" ]; then
+        print_message "error" "Confirmation failed. Deletion cancelled."
+        return
+    fi
+
+    # Delete user
+    userdel "$sftp_user"
+    print_message "info" "System user '$sftp_user' deleted."
+
+    # Remove sshd_config block. This is tricky.
+    # We create a temp file, copy the config excluding the user's block, then replace the original.
+    local temp_sshd_config=$(mktemp)
+    awk -v user="$sftp_user" '
+        # If we find the start of the block for our user, set a flag and skip the line.
+        $1 == "Match" && $2 == "User" && $3 == user { in_block=1; next }
+        # If we are in the block and see a new Match block or are at the end of the file, we are out of the block.
+        $1 == "Match" || END { in_block=0 }
+        # If we are not in the block, print the line.
+        !in_block { print }
+    ' /etc/ssh/sshd_config > "$temp_sshd_config"
+
+    # Verify the temp file is not empty before overwriting
+    if [ -s "$temp_sshd_config" ]; then
+        cp "$temp_sshd_config" /etc/ssh/sshd_config
+        rm "$temp_sshd_config"
+        print_message "success" "SFTP configuration for '$sftp_user' removed from /etc/ssh/sshd_config."
+    else
+        print_message "error" "Failed to edit sshd_config. The temporary file was empty. Aborting change."
+        rm "$temp_sshd_config"
+        return 1
+    fi
+
+    # Restart SSH
+    systemctl restart sshd
+    print_message "success" "SFTP user '$sftp_user' has been deleted."
+}
+
+# Main function for SFTP user management
+manage_sftp_users() {
+    while true; do
+        clear
+        print_message "info" "--- SFTP User Management ---"
+        list_sftp_users || { read -n 1 -s -r -p "Press any key to return..."; break; }
+        echo
+        echo "  1. Change User Password"
+        echo "  2. Delete User"
+        echo "  3. Back to Management Menu"
+        echo
+        read -rp "Enter your choice [1-3]: " choice
+        case $choice in
+            1) change_sftp_password ;;
+            2) delete_sftp_user ;;
+            3) break ;;
+            *) print_message "warn" "Invalid option." ;;
+        esac
+        read -n 1 -s -r -p "Press any key to continue..."
+    done
+}
+
+# --- Mail User Management Functions ---
+
+# Lists mail users (standard users with home directories)
+list_mail_users() {
+    print_message "info" "--- Email Accounts ---"
+    # This awk command lists users with UID >= 1000 and a home dir in /home
+    local users=$(awk -F: '$3 >= 1000 && $6 ~ /^\/home/ { print $1 }' /etc/passwd || true)
+    if [ -z "$users" ]; then
+        print_message "warn" "No mail/system users found."
+        return 1
+    fi
+    for user in $users; do
+        echo "  - $user"
+    done
+    echo "----------------------"
+    return 0
+}
+
+# Adds a new email account (system user)
+add_mail_user() {
+    print_message "info" "--- Add Email Account ---"
+    read -p "Enter the new email username (e.g., 'contact' for 'contact@domain.com'): " user_name
+    if [ -z "$user_name" ]; then
+        print_message "error" "Username cannot be empty."
+        return
+    fi
+
+    read -s -p "Enter the password for this account: " user_password
+    echo
+    if [ -z "$user_password" ]; then
+        print_message "error" "Password cannot be empty."
+        return
+    fi
+
+    # Create user with a home directory and no shell access
+    useradd -m -s /usr/sbin/nologin "$user_name"
+    echo "$user_name:$user_password" | chpasswd
+
+    print_message "success" "Email account '$user_name' created. The user can now log in via IMAP."
+}
+
+# Deletes an email account
+delete_mail_user() {
+    print_message "info" "--- Delete Email Account ---"
+    list_mail_users || return
+
+    read -p "Enter the username of the account to delete: " user_name
+    if [ -z "$user_name" ]; then
+        print_message "error" "Username cannot be empty."
+        return
+    fi
+
+    # Verify user exists
+    if ! id "$user_name" &>/dev/null; then
+        print_message "error" "User '$user_name' does not exist."
+        return
+    fi
+
+    print_message "warn" "This will permanently delete the user '$user_name' and all their emails."
+    read -p "To confirm, please type the username '$user_name': " confirmation
+    if [ "$confirmation" != "$user_name" ]; then
+        print_message "error" "Confirmation failed. Deletion cancelled."
+        return
+    fi
+
+    # Delete the user and their home directory (-r)
+    userdel -r "$user_name"
+    print_message "success" "Email account '$user_name' and all associated data have been deleted."
+}
+
+# Main function for mail user management
+manage_mail_users() {
+    while true; do
+        clear
+        print_message "info" "--- Email Account Management ---"
+        echo
+        echo "  1. Add Email Account"
+        echo "  2. Delete Email Account"
+        echo "  3. List Email Accounts"
+        echo "  4. Back to Management Menu"
+        echo
+        read -rp "Enter your choice [1-4]: " choice
+        case $choice in
+            1) add_mail_user ;;
+            2) delete_mail_user ;;
+            3) list_mail_users ;;
+            4) break ;;
+            *) print_message "warn" "Invalid option." ;;
+        esac
+        read -n 1 -s -r -p "Press any key to continue..."
+    done
+}
+
+# --- Management Menu ---
+
+show_management_menu() {
+    clear
+    echo
+    print_message "info" "============================================="
+    print_message "info" "        Manage Existing Services"
+    print_message "info" "============================================="
+    echo
+    echo "  1. Manage Websites"
+    echo "  2. Manage SFTP Users"
+    echo "  3. Manage Email Accounts"
+    echo "  4. Back to Main Menu"
+    echo
+}
+
+run_management_menu() {
+    while true; do
+        show_management_menu
+        read -rp "Enter your choice [1-4]: " choice
+        case $choice in
+            1) manage_websites ;;
+            2) manage_sftp_users ;;
+            3) manage_mail_users ;;
+            4)
+                print_message "info" "Returning to main menu."
+                break
+                ;;
+            *)
+                print_message "warn" "Invalid option. Please try again."
+                ;;
+        esac
+        read -n 1 -s -r -p "Press any key to continue..."
+    done
 }
 
 # --- Main Execution Logic ---
@@ -682,7 +1089,7 @@ main() {
 
     while true; do
         show_main_menu
-        read -rp "Enter your choice [1-7]: " choice
+        read -rp "Enter your choice [1-8]: " choice
         case $choice in
             1) run_initial_setup ;;
             2) add_new_website ;;
@@ -690,7 +1097,8 @@ main() {
             4) create_sftp_user ;;
             5) backup_website ;;
             6) restore_website ;;
-            7)
+            7) run_management_menu ;;
+            8)
                 print_message "info" "Exiting script. Goodbye!"
                 break
                 ;;

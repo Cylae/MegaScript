@@ -48,32 +48,34 @@ It simplifies complex tasks like setting up a LEMP stack, creating websites with
 ### 📋 Menu Options Explained
 
 *   **1. Initial Server Setup (Update, Firewall, LEMP)**
-    *   This should be the first option you run on a new server.
-    *   It updates system packages, installs Nginx, MariaDB, and PHP, configures the firewall (UFW), and runs the initial MariaDB security setup.
+    *   This should be the first option you run on a new server. It installs LEMP, configures the firewall, and secures MariaDB.
 
 *   **2. Add New Website (with SSL)**
-    *   Prompts for a domain name (e.g., `example.com`).
-    *   Creates the web directory at `/var/www/example.com`.
-    *   Creates a new Nginx server block.
-    *   Installs Certbot (if needed) and obtains a free SSL certificate for the domain and its `www` subdomain. Your site will be available via `https://`.
+    *   Creates a new website with an Nginx server block and a free Let's Encrypt SSL certificate.
 
 *   **3. Setup Mail Server (Postfix & Dovecot)**
-    *   **DNS Prerequisite:** Before running this, you MUST have an **MX record** for your domain pointing to your server's hostname (e.g., `mail.example.com`). You must also have an **A record** for that hostname pointing to your server's IP.
-    *   This option installs and configures Postfix and Dovecot to create a fully functional mail server.
+    *   **DNS Prerequisite:** You MUST have correctly configured MX and A records for your domain.
+    *   Installs and configures a full mail server.
 
 *   **4. Create SFTP User**
-    *   **Security Prerequisite:** The directory you want to jail the user in (e.g., `/var/www/example.com`) **MUST be owned by `root`**. This is a security requirement of the SSH server. You can then create a writable subdirectory inside (e.g., `/var/www/example.com/public_html`) owned by the new user.
-    *   This option creates a new user who can only log in via SFTP to manage files in their specified directory.
+    *   **Security Prerequisite:** The user's jail directory MUST be owned by `root`.
+    *   Creates a new, secure SFTP-only user.
 
-*   **5. Backup Server/Website**
-    *   Prompts for a domain name and its associated database name.
-    *   Creates a `.tar.gz` archive containing all web files and a `.sql` dump of the database.
-    *   Backups are saved in `/root/backups/`.
+*   **5. Backup Website**
+    *   Creates a `.tar.gz` archive of a site's files and database, saved in `/root/backups/`.
 
-*   **6. Restore Server/Website**
+*   **6. Restore Website**
     *   ⚠️ **WARNING:** This is a destructive operation.
-    *   Prompts for the path to a backup file.
-    *   It will overwrite the current web files and database. For safety, it renames the existing web directory to `.bak` before restoring.
+    *   Restores a site from a backup file, with safety checks.
+
+*   **7. Manage Existing Services**
+    *   Opens a sub-menu for managing services that have already been created.
+    *   **Manage Websites:** Allows you to delete, disable, or enable existing websites.
+    *   **Manage SFTP Users:** Allows you to change the password of or delete existing SFTP users.
+    *   **Manage Email Accounts:** Allows you to add, delete, or list existing email accounts.
+
+*   **8. Exit**
+    *   Exits the script.
 
 ### 📝 Logging
 
@@ -125,32 +127,34 @@ Il simplifie des tâches complexes telles que la mise en place d'une pile LEMP, 
 ### 📋 Explication des Options du Menu
 
 *   **1. Installation Initiale du Serveur (Mise à jour, Pare-feu, LEMP)**
-    *   Ce devrait être la première option que vous exécutez sur un nouveau serveur.
-    *   Elle met à jour les paquets système, installe Nginx, MariaDB et PHP, configure le pare-feu (UFW) et effectue la configuration de sécurité initiale de MariaDB.
+    *   La première option à exécuter sur un nouveau serveur. Elle installe LEMP, configure le pare-feu et sécurise MariaDB.
 
 *   **2. Ajouter un Nouveau Site Web (avec SSL)**
-    *   Demande un nom de domaine (ex: `example.com`).
-    *   Crée le répertoire web dans `/var/www/example.com`.
-    *   Crée un nouveau "server block" Nginx.
-    *   Installe Certbot (si nécessaire) et obtient un certificat SSL gratuit pour le domaine et son sous-domaine `www`. Votre site sera disponible via `https://`.
+    *   Crée un nouveau site web avec un "server block" Nginx et un certificat SSL gratuit de Let's Encrypt.
 
 *   **3. Configurer le Serveur de Messagerie (Postfix & Dovecot)**
-    *   **Prérequis DNS :** Avant d'exécuter cette option, vous DEVEZ avoir un **enregistrement MX** pour votre domaine qui pointe vers le nom d'hôte de votre serveur (ex: `mail.example.com`). Vous devez également avoir un **enregistrement A** pour ce nom d'hôte qui pointe vers l'adresse IP de votre serveur.
-    *   Cette option installe et configure Postfix et Dovecot pour créer un serveur de messagerie entièrement fonctionnel.
+    *   **Prérequis DNS :** Vous DEVEZ avoir configuré correctement les enregistrements MX et A pour votre domaine.
+    *   Installe et configure un serveur de messagerie complet.
 
 *   **4. Créer un Utilisateur SFTP**
-    *   **Prérequis de Sécurité :** Le répertoire dans lequel vous souhaitez emprisonner l'utilisateur (ex: `/var/www/example.com`) **DOIT appartenir à `root`**. C'est une exigence de sécurité du serveur SSH. Vous pouvez ensuite créer un sous-répertoire accessible en écriture à l'intérieur (ex: `/var/www/example.com/public_html`) appartenant au nouvel utilisateur.
-    *   Cette option crée un nouvel utilisateur qui ne peut se connecter que via SFTP pour gérer les fichiers dans le répertoire spécifié.
+    *   **Prérequis de Sécurité :** Le répertoire d'emprisonnement de l'utilisateur DOIT appartenir à `root`.
+    *   Crée un nouvel utilisateur sécurisé, limité au SFTP.
 
-*   **5. Sauvegarder le Serveur/Site Web**
-    *   Demande un nom de domaine et le nom de sa base de données associée.
-    *   Crée une archive `.tar.gz` contenant tous les fichiers web et un export `.sql` de la base de données.
-    *   Les sauvegardes sont enregistrées dans `/root/backups/`.
+*   **5. Sauvegarder un Site Web**
+    *   Crée une archive `.tar.gz` des fichiers et de la base de données d'un site, sauvegardée dans `/root/backups/`.
 
-*   **6. Restaurer le Serveur/Site Web**
+*   **6. Restaurer un Site Web**
     *   ⚠️ **ATTENTION :** Ceci est une opération destructive.
-    *   Demande le chemin vers un fichier de sauvegarde.
-    *   Elle écrasera les fichiers web et la base de données actuels. Par sécurité, elle renomme le répertoire web existant en `.bak` avant la restauration.
+    *   Restaure un site à partir d'un fichier de sauvegarde, avec des mesures de sécurité.
+
+*   **7. Gérer les services existants**
+    *   Ouvre un sous-menu pour la gestion des services déjà créés.
+    *   **Gérer les sites web :** Vous permet de supprimer, désactiver ou activer des sites web existants.
+    *   **Gérer les utilisateurs SFTP :** Vous permet de changer le mot de passe ou de supprimer des utilisateurs SFTP existants.
+    *   **Gérer les comptes de messagerie :** Vous permet d'ajouter, de supprimer ou de lister les comptes de messagerie existants.
+
+*   **8. Quitter**
+    *   Quitte le script.
 
 ### 📝 Journalisation (Logging)
 
