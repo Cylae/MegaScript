@@ -1,22 +1,23 @@
 #!/bin/bash
-
+# Load testing libraries from the vendored location
 load 'libs/bats-support/load'
 load 'libs/bats-assert/load'
 
-# Get the directory of this helper file
-TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-# Get the root project directory
-PROJECT_ROOT="$TEST_DIR/.."
+# Get the project root from the current working directory.
+# This assumes tests are run from the project's root directory, which is standard practice.
+PROJECT_ROOT="$(pwd)"
 
 # Source the main script to get access to its functions
-# The main script is now "source-safe" and won't execute its main() function
 source "$PROJECT_ROOT/setup.sh"
 
 # Load the English language file for testing
-# This ensures our tests are consistent and not dependent on user interaction
 source "$PROJECT_ROOT/lang/en.sh"
 
-# Set a dummy domain for testing purposes
+# Export functions so they are available to subshells invoked by `sudo` in tests
+export -f create_sftp_user_logic
+export -f delete_sftp_user_logic
+
+# Define constants for testing
 TEST_DOMAIN="test.example.com"
 TEST_SFTP_USER="test-sftp"
 TEST_SFTP_DIR="/var/www/sftp-jail"

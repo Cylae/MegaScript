@@ -538,8 +538,10 @@ create_sftp_user_logic() {
 
     # Create user with no shell access and add to www-data group
     local msg3; msg3=$(printf "$MSG_INFO_USER_EXISTS" "$sftp_user")
-    useradd --home "$sftp_dir" --shell "/usr/sbin/nologin" --gid "www-data" "$sftp_user" &>/dev/null || print_message "info" "$msg3"
-    echo "$sftp_user:$sftp_password" | chpasswd
+    # Generate an encrypted password to use with useradd
+    local encrypted_password
+    encrypted_password=$(openssl passwd -1 "$sftp_password")
+    useradd --home "$sftp_dir" --shell "/usr/sbin/nologin" --gid "www-data" -p "$encrypted_password" "$sftp_user" &>/dev/null || print_message "info" "$msg3"
     local msg4; msg4=$(printf "$MSG_SUCCESS_USER_CREATED" "$sftp_user")
     print_message "success" "$msg4"
 
@@ -843,20 +845,18 @@ list_nginx_sites() {
         print_message "warn" "$MSG_NO_WEBSITES_FOUND"
         return 1
     fi
-
-    # This part is not internationalized as it's more of a debug/listing output
-    print_message "info" "--- Available Websites ---"
+    print_message "info" "$MENU_LIST_WEBSITES_HEADER"
     for site in $all_sites; do
         local symlink_path="$sites_enabled/$site"
         if [[ "$status" == "enabled" && -L "$symlink_path" ]]; then
-            echo "  - $site (Enabled)"
+            echo "  - $site $MENU_LIST_WEBSITES_ENABLED"
         elif [[ "$status" == "disabled" && ! -L "$symlink_path" ]]; then
-            echo "  - $site (Disabled)"
+            echo "  - $site $MENU_LIST_WEBSITES_DISABLED"
         elif [[ "$status" == "all" ]]; then
             if [ -L "$symlink_path" ]; then
-                echo "  - $site (Enabled)"
+                echo "  - $site $MENU_LIST_WEBSITES_ENABLED"
             else
-                echo "  - $site (Disabled)"
+                echo "  - $site $MENU_LIST_WEBSITES_DISABLED"
             fi
         fi
     done

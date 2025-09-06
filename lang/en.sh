@@ -251,6 +251,9 @@ MENU_MAIL_OPTION_4="4. Back to Management Menu"
 
 # --- General Management ---
 MENU_MGMT_TITLE="Manage Existing Services"
+MENU_LIST_WEBSITES_HEADER="--- Available Websites ---"
+MENU_LIST_WEBSITES_ENABLED="(Enabled)"
+MENU_LIST_WEBSITES_DISABLED="(Disabled)"
 MENU_MGMT_OPTION_1="1. Manage Websites"
 MENU_MGMT_OPTION_2="2. Manage SFTP Users"
 MENU_MGMT_OPTION_3="3. Manage Email Accounts"
