@@ -60,6 +60,72 @@ print_message() {
     fi
 }
 
+# A function to read user input with validation and looping.
+# Usage: read_with_validation "prompt" "variable_name" "validation_type" ["error_message"]
+# Returns 0 on successful read.
+read_with_validation() {
+    local prompt_msg="$1"
+    local -n var_name="$2" # Nameref to assign to the variable in the caller's scope
+    local type="$3"
+    local error_msg="$4" # Optional custom error message
+    local regex
+
+    case "$type" in
+        "domain")
+            # More compliant regex for domain names
+            regex='^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+            [ -z "$error_msg" ] && error_msg="$MSG_ERROR_INVALID_DOMAIN"
+            ;;
+        "email")
+            regex='^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            [ -z "$error_msg" ] && error_msg="$MSG_ERROR_INVALID_EMAIL"
+            ;;
+        "username")
+            # Basic linux username validation
+            regex='^[a-z_][a-z0-9_-]{0,30}$'
+            [ -z "$error_msg" ] && error_msg="$MSG_ERROR_INVALID_USERNAME"
+            ;;
+        "path")
+            regex='^\/.*$'
+            [ -z "$error_msg" ] && error_msg="$MSG_ERROR_INVALID_PATH"
+            ;;
+        "db_name")
+            regex='^[a-zA-Z0-9_]+$'
+            [ -z "$error_msg" ] && error_msg="$MSG_ERROR_INVALID_DB_NAME"
+            ;;
+        "not_empty")
+            # Loop until a non-empty value is provided
+            while true; do
+                read -p "$prompt_msg" var_name
+                if [ -n "$var_name" ]; then
+                    return 0
+                fi
+                print_message "error" "${error_msg:-$MSG_ERROR_CANNOT_BE_EMPTY}"
+            done
+            ;;
+        *)
+            # Default behavior: just read without any validation
+            read -p "$prompt_msg" var_name
+            return 0
+            ;;
+    esac
+
+    # Loop for regex-based validations
+    while true; do
+        read -p "$prompt_msg" var_name
+        # Also check for empty on regex types, as most should not be empty
+        if [ -z "$var_name" ]; then
+            print_message "error" "${MSG_ERROR_CANNOT_BE_EMPTY}"
+            continue
+        fi
+        if [[ "$var_name" =~ $regex ]]; then
+            break
+        else
+            print_message "error" "$error_msg"
+        fi
+    done
+}
+
 # --- Core Functions ---
 
 # Checks for root privileges and exits if not found.
@@ -153,7 +219,7 @@ setup_lemp_stack() {
         # Find latest PHP version
         local php_version_short=$(apt-cache search --names-only '^php[0-9]+\.[0-9]+-fpm$' | cut -d' ' -f1 | sort -V | tail -n 1 | grep -oP '(?<=php)\d+\.\d+')
         if [ -z "$php_version_short" ]; then
-            print_message "error" "$MSG_ERROR_PHP_FPM_NOT_FOUND"
+            print_message "warn" "$MSG_ERROR_PHP_FPM_NOT_FOUND"
             local php_packages="php-fpm php-mysql php-curl php-gd php-mbstring php-xml php-zip"
         else
             local msg; msg=$(printf "$MSG_INFO_PHP_VERSION_DETECTED" "$php_version_short")
@@ -225,13 +291,18 @@ EOF
 # Adds a new website with an Nginx server block and SSL
 add_new_website() {
     print_message "info" "$MENU_ADD_WEBSITE"
-    read -p "$PROMPT_ENTER_DOMAIN " domain_name
+    local domain_name
+    read_with_validation "$PROMPT_ENTER_DOMAIN" domain_name "domain"
+    local email
+    read_with_validation "$PROMPT_ENTER_EMAIL" email "email"
 
-    if [ -z "$domain_name" ]; then
-        print_message "error" "$MSG_ERROR_DOMAIN_EMPTY"
-        return
-    fi
+    add_new_website_logic "$domain_name" "$email"
+}
 
+# Core logic for adding a new website
+add_new_website_logic() {
+    local domain_name=$1
+    local email=$2
     local web_root="/var/www/$domain_name"
     local nginx_conf="/etc/nginx/sites-available/$domain_name.conf"
 
@@ -268,7 +339,6 @@ EOF
     cat <<EOF > "$nginx_conf"
 server {
     listen 80;
-    listen [::]:80;
 
     server_name $domain_name www.$domain_name;
     root $web_root;
@@ -300,12 +370,13 @@ EOF
     fi
 
     # Setup SSL
-    setup_ssl_for_domain "$domain_name"
+    setup_ssl_for_domain "$domain_name" "$email"
 }
 
 # Installs Certbot and obtains an SSL certificate for a given domain
 setup_ssl_for_domain() {
     local domain_name=$1
+    local email=$2
     local msg; msg=$(printf "$MSG_INFO_SETTING_UP_SSL" "$domain_name")
     print_message "info" "$msg"
 
@@ -323,12 +394,6 @@ setup_ssl_for_domain() {
     # Obtain certificate
     local msg2; msg2=$(printf "$MSG_INFO_REQUESTING_CERT" "$domain_name" "$domain_name")
     print_message "info" "$msg2"
-    local email
-    read -p "$PROMPT_ENTER_EMAIL " email
-    if [ -z "$email" ]; then
-        print_message "error" "$MSG_ERROR_EMAIL_REQUIRED"
-        return 1
-    fi
 
     # The --nginx flag will automatically edit the Nginx config
     if certbot --nginx --non-interactive --agree-tos --email "$email" -d "$domain_name" -d "www.$domain_name"; then
@@ -361,17 +426,11 @@ install_augeas_if_needed() {
 setup_mail_server() {
     print_message "info" "$MENU_SETUP_MAIL_SERVER"
     print_message "warn" "$MSG_WARN_MAIL_ADVANCED_SETUP"
-    read -p "$PROMPT_ENTER_MAIL_DOMAIN " mail_domain
-    if [ -z "$mail_domain" ]; then
-        print_message "error" "$MSG_ERROR_MAIL_DOMAIN_EMPTY"
-        return
-    fi
+    local mail_domain
+    read_with_validation "$PROMPT_ENTER_MAIL_DOMAIN" mail_domain "domain"
 
-    read -p "$PROMPT_ENTER_MAIL_HOSTNAME " mail_hostname
-    if [ -z "$mail_hostname" ]; then
-        print_message "error" "$MSG_ERROR_MAIL_HOSTNAME_EMPTY"
-        return
-    fi
+    local mail_hostname
+    read_with_validation "$PROMPT_ENTER_MAIL_HOSTNAME" mail_hostname "domain"
 
     read -p "$PROMPT_ARE_YOU_SURE " confirmation
     if [[ ! "$confirmation" =~ ^[yYoO](es|ui)?$ ]]; then
@@ -492,13 +551,11 @@ EOF
 # Creates a new user restricted to SFTP access in a specific directory.
 create_sftp_user() {
     print_message "info" "$MENU_CREATE_SFTP_USER"
-    read -p "$PROMPT_ENTER_SFTP_USER " sftp_user
-    if [ -z "$sftp_user" ]; then
-        print_message "error" "$MSG_ERROR_SFTP_USER_EMPTY"
-        return
-    fi
+    local sftp_user
+    read_with_validation "$PROMPT_ENTER_SFTP_USER" sftp_user "username"
 
     local prompt_pw; prompt_pw=$(printf "$PROMPT_ENTER_SFTP_PASSWORD" "$sftp_user")
+    local sftp_password
     read -s -p "$prompt_pw " sftp_password
     echo
     if [ -z "$sftp_password" ]; then
@@ -506,7 +563,8 @@ create_sftp_user() {
         return
     fi
 
-    read -p "$PROMPT_ENTER_SFTP_DIR " sftp_dir
+    local sftp_dir
+    read_with_validation "$PROMPT_ENTER_SFTP_DIR" sftp_dir "path"
     if [ ! -d "$sftp_dir" ]; then
         local msg; msg=$(printf "$MSG_ERROR_DIR_NOT_EXIST" "$sftp_dir")
         print_message "error" "$msg"
@@ -548,10 +606,15 @@ create_sftp_user_logic() {
     # Configure sshd_config using augtool
     print_message "info" "$MSG_INFO_CONFIGURING_SSHD"
 
-    # Using a more robust augtool command structure
-    local aug_commands
-    aug_commands=$(mktemp)
-    cat > "$aug_commands" <<EOF
+    # Idempotency Check: only add sshd config if it doesn't exist
+    if augtool match "/files${sshd_config_path}/Match[Condition/User='${sftp_user}']" | grep -q 'Match'; then
+        local msg_exists; msg_exists=$(printf "$MSG_WARN_SFTP_CONF_EXISTS" "$sftp_user")
+        print_message "warn" "$msg_exists"
+    else
+        # Using a more robust augtool command structure
+        local aug_commands
+        aug_commands=$(mktemp)
+        cat > "$aug_commands" <<EOF
 # Ensure the SFTP subsystem is set to the secure internal-sftp
 set /files${sshd_config_path}/Subsystem/sftp internal-sftp
 
@@ -565,17 +628,18 @@ set \$match_block/Settings/AllowTcpForwarding "no"
 set \$match_block/Settings/X11Forwarding "no"
 EOF
 
-    if augtool --autosave --file "$aug_commands"; then
-        local msg5; msg5=$(printf "$MSG_SUCCESS_SFTP_JAIL_CONFIGURED" "$sftp_user" "$sshd_config_path")
-        print_message "success" "$msg5"
-    else
-        print_message "error" "$MSG_ERROR_SSHD_CONFIG_FAILED"
-        # Optional: show augtool errors if any were logged
-        [ -f /tmp/augtool.err ] && cat /tmp/augtool.err
+        if augtool --autosave --file "$aug_commands"; then
+            local msg5; msg5=$(printf "$MSG_SUCCESS_SFTP_JAIL_CONFIGURED" "$sftp_user" "$sshd_config_path")
+            print_message "success" "$msg5"
+        else
+            print_message "error" "$MSG_ERROR_SSHD_CONFIG_FAILED"
+            # Optional: show augtool errors if any were logged
+            [ -f /tmp/augtool.err ] && cat /tmp/augtool.err
+            rm -f "$aug_commands"
+            return 1
+        fi
         rm -f "$aug_commands"
-        return 1
     fi
-    rm -f "$aug_commands"
 
     # The chroot directory itself must be root-owned with 755 permissions.
     chmod 755 "$sftp_dir"
@@ -645,11 +709,8 @@ EOF
 # Backs up a website's files and database
 backup_website() {
     print_message "info" "$MENU_BACKUP_WEBSITE"
-    read -p "$PROMPT_ENTER_DOMAIN_TO_BACKUP " domain_name
-    if [ -z "$domain_name" ]; then
-        print_message "error" "$MSG_ERROR_DOMAIN_EMPTY"
-        return
-    fi
+    local domain_name
+    read_with_validation "$PROMPT_ENTER_DOMAIN_TO_BACKUP" domain_name "domain"
 
     local web_root="/var/www/$domain_name"
     if [ ! -d "$web_root" ]; then
@@ -658,17 +719,24 @@ backup_website() {
         return
     fi
 
-    read -p "$PROMPT_ENTER_DB_TO_BACKUP " db_name
-    if [ -z "$db_name" ]; then
-        print_message "error" "$MSG_ERROR_DB_NAME_EMPTY"
-        return
-    fi
+    local db_name
+    read_with_validation "$PROMPT_ENTER_DB_TO_BACKUP" db_name "db_name"
+
+    backup_website_logic "$domain_name" "$db_name"
+}
+
+# Core logic for backing up a website
+backup_website_logic() {
+    local domain_name=$1
+    local db_name=$2
+    local web_root="/var/www/$domain_name"
 
     local backup_dir="/root/backups"
     mkdir -p "$backup_dir"
     local timestamp=$(date "+%Y-%m-%d-%H%M%S")
     local backup_file="$backup_dir/backup-${domain_name}-${timestamp}.tar.gz"
-    local temp_dir=$(mktemp -d)
+    local temp_dir
+    temp_dir=$(mktemp -d)
 
     local msg2; msg2=$(printf "$MSG_INFO_STARTING_BACKUP" "$domain_name")
     print_message "info" "$msg2"
@@ -681,9 +749,9 @@ backup_website() {
         rm -rf "$temp_dir"
         return 1
     fi
-    local db_root_pw=$(cat /root/.mysql_root_password)
-    mysqldump -u root -p"${db_root_pw}" "${db_name}" > "${temp_dir}/${db_name}.sql"
-    if [ $? -ne 0 ]; then
+    local db_root_pw
+    db_root_pw=$(cat /root/.mysql_root_password)
+    if ! mysqldump -u root -p"${db_root_pw}" "${db_name}" > "${temp_dir}/${db_name}.sql"; then
         local msg4; msg4=$(printf "$MSG_ERROR_DB_DUMP_FAILED" "$db_name")
         print_message "error" "$msg4"
         rm -rf "$temp_dir"
@@ -695,8 +763,6 @@ backup_website() {
     local msg5; msg5=$(printf "$MSG_INFO_ARCHIVING_FILES" "$web_root")
     print_message "info" "$msg5"
     mkdir -p "${temp_dir}/web_root_content"
-    # Copy contents of web_root, not the directory itself, to allow for flexible restore.
-    # The `/.` ensures that the contents of the directory are copied, not the directory itself.
     cp -a "${web_root}/." "${temp_dir}/web_root_content/"
 
     # Create final combined archive
@@ -716,25 +782,20 @@ restore_website() {
     print_message "info" "$MENU_RESTORE_WEBSITE"
     print_message "warn" "$MSG_WARN_RESTORE_DESTRUCTIVE"
 
-    read -p "$PROMPT_ENTER_BACKUP_PATH " backup_file
+    local backup_file
+    read_with_validation "$PROMPT_ENTER_BACKUP_PATH" backup_file "path"
     if [ ! -f "$backup_file" ]; then
         local msg; msg=$(printf "$MSG_ERROR_BACKUP_FILE_NOT_FOUND" "$backup_file")
         print_message "error" "$msg"
         return
     fi
 
-    read -p "$PROMPT_ENTER_DOMAIN_TO_RESTORE " domain_name
-    if [ -z "$domain_name" ]; then
-        print_message "error" "$MSG_ERROR_DOMAIN_EMPTY"
-        return
-    fi
+    local domain_name
+    read_with_validation "$PROMPT_ENTER_DOMAIN_TO_RESTORE" domain_name "domain"
 
     local web_root="/var/www/$domain_name"
-    read -p "$PROMPT_ENTER_DB_TO_RESTORE " db_name
-    if [ -z "$db_name" ]; then
-        print_message "error" "$MSG_ERROR_DB_NAME_EMPTY"
-        return
-    fi
+    local db_name
+    read_with_validation "$PROMPT_ENTER_DB_TO_RESTORE" db_name "db_name"
 
     local msg2; msg2=$(printf "$MSG_WARN_CONFIRM_RESTORE" "$web_root" "$db_name")
     print_message "warn" "$msg2"
@@ -745,7 +806,18 @@ restore_website() {
         return
     fi
 
-    local temp_dir=$(mktemp -d)
+    restore_website_logic "$backup_file" "$domain_name" "$db_name"
+}
+
+# Core logic for restoring a website
+restore_website_logic() {
+    local backup_file=$1
+    local domain_name=$2
+    local db_name=$3
+    local web_root="/var/www/$domain_name"
+
+    local temp_dir
+    temp_dir=$(mktemp -d)
     print_message "info" "$MSG_INFO_EXTRACTING_BACKUP"
     tar -xzf "$backup_file" -C "$temp_dir"
 
@@ -764,9 +836,7 @@ restore_website() {
 
         # Create the new web root and copy contents from the backup.
         mkdir -p "$web_root"
-        # Using cp -a with /.' to copy all contents including hidden files.
         cp -a "${backup_content_dir}/." "$web_root/"
-
         chown -R www-data:www-data "$web_root"
         print_message "success" "$MSG_SUCCESS_FILES_RESTORED"
     else
@@ -775,7 +845,8 @@ restore_website() {
     fi
 
     # Restore Database
-    local sql_file=$(find "$temp_dir" -name "*.sql" -type f | head -n 1)
+    local sql_file
+    sql_file=$(find "$temp_dir" -name "*.sql" -type f | head -n 1)
     if [ -n "$sql_file" ]; then
         local msg6; msg6=$(printf "$MSG_INFO_RESTORING_DB" "$db_name" "$(basename "$sql_file")")
         print_message "info" "$msg6"
@@ -784,11 +855,11 @@ restore_website() {
             rm -rf "$temp_dir"
             return 1
         fi
-        local db_root_pw=$(cat /root/.mysql_root_password)
+        local db_root_pw
+        db_root_pw=$(cat /root/.mysql_root_password)
         # Ensure database exists
         mysql -u root -p"${db_root_pw}" -e "CREATE DATABASE IF NOT EXISTS \`${db_name}\`;"
-        mysql -u root -p"${db_root_pw}" "${db_name}" < "$sql_file"
-        if [ $? -ne 0 ]; then
+        if ! mysql -u root -p"${db_root_pw}" "${db_name}" < "$sql_file"; then
             print_message "error" "$MSG_ERROR_DB_RESTORE_FAILED"
             rm -rf "$temp_dir"
             return 1
@@ -886,6 +957,21 @@ delete_website() {
         return
     fi
 
+    local db_to_delete=""
+    read -p "$PROMPT_DELETE_DB " del_db
+    if [[ "$del_db" =~ ^[yYoO](es|ui)?$ ]]; then
+        read_with_validation "$PROMPT_ENTER_DB_TO_DELETE" db_to_delete "db_name"
+    fi
+
+    delete_website_logic "$site_conf" "$db_to_delete"
+}
+
+# Core logic for deleting a website
+delete_website_logic() {
+    local site_conf=$1
+    local db_to_delete=$2
+    local domain=$(basename "$site_conf" .conf)
+
     # Delete Nginx files
     rm -f "/etc/nginx/sites-available/$site_conf"
     rm -f "/etc/nginx/sites-enabled/$site_conf"
@@ -905,19 +991,15 @@ delete_website() {
         print_message "info" "$msg4"
     fi
 
-    # Delete database
-    read -p "$PROMPT_DELETE_DB " del_db
-    if [[ "$del_db" =~ ^[yYoO](es|ui)?$ ]]; then
-        read -p "$PROMPT_ENTER_DB_TO_DELETE " db_name
-        if [ -n "$db_name" ]; then
-            if [ ! -f "/root/.mysql_root_password" ]; then
-                print_message "error" "$MSG_ERROR_DB_PASS_NOT_FOUND"
-            else
-                local db_root_pw=$(cat /root/.mysql_root_password)
-                mysql -u root -p"${db_root_pw}" -e "DROP DATABASE IF EXISTS \`${db_name}\`;"
-                local msg5; msg5=$(printf "$MSG_DB_DELETED" "$db_name")
-                print_message "info" "$msg5"
-            fi
+    # Delete database if a name is provided
+    if [ -n "$db_to_delete" ]; then
+        if [ ! -f "/root/.mysql_root_password" ]; then
+            print_message "error" "$MSG_ERROR_DB_PASS_NOT_FOUND"
+        else
+            local db_root_pw=$(cat /root/.mysql_root_password)
+            mysql -u root -p"${db_root_pw}" -e "DROP DATABASE IF EXISTS \`${db_to_delete}\`;"
+            local msg5; msg5=$(printf "$MSG_DB_DELETED" "$db_to_delete")
+            print_message "info" "$msg5"
         fi
     fi
 
@@ -1007,11 +1089,8 @@ change_sftp_password() {
     print_message "info" "$MENU_SFTP_MGMT"
     list_sftp_users || return
 
-    read -p "$PROMPT_USERNAME_TO_MODIFY " sftp_user
-    if [ -z "$sftp_user" ]; then
-        print_message "error" "$MSG_ERROR_USERNAME_EMPTY"
-        return
-    fi
+    local sftp_user
+    read_with_validation "$PROMPT_USERNAME_TO_MODIFY" sftp_user "username"
 
     # Verify user exists in the SFTP config
     if ! grep -q "^Match User $sftp_user" /etc/ssh/sshd_config; then
@@ -1038,11 +1117,8 @@ delete_sftp_user() {
     print_message "info" "$MENU_SFTP_MGMT"
     list_sftp_users || return
 
-    read -p "$PROMPT_USERNAME_TO_DELETE " sftp_user
-    if [ -z "$sftp_user" ]; then
-        print_message "error" "$MSG_ERROR_USERNAME_EMPTY"
-        return
-    fi
+    local sftp_user
+    read_with_validation "$PROMPT_USERNAME_TO_DELETE" sftp_user "username"
 
     # Verify user exists in the SFTP config using a more robust check
     local sftp_user_exists=$(augtool get "/files/etc/ssh/sshd_config/Match[Condition/User='$sftp_user']/Condition/User")
@@ -1140,12 +1216,10 @@ list_mail_users() {
 # Adds a new email account (system user)
 add_mail_user() {
     print_message "info" "$MENU_MAIL_MGMT"
-    read -p "$PROMPT_ADD_EMAIL_USER " user_name
-    if [ -z "$user_name" ]; then
-        print_message "error" "$MSG_ERROR_USERNAME_EMPTY"
-        return
-    fi
+    local user_name
+    read_with_validation "$PROMPT_ADD_EMAIL_USER" user_name "username"
 
+    local user_password
     read -s -p "$PROMPT_PASSWORD_FOR_ACCOUNT " user_password
     echo
     if [ -z "$user_password" ]; then
@@ -1166,11 +1240,8 @@ delete_mail_user() {
     print_message "info" "$MENU_MAIL_MGMT"
     list_mail_users || return
 
-    read -p "$PROMPT_USERNAME_TO_DELETE_EMAIL " user_name
-    if [ -z "$user_name" ]; then
-        print_message "error" "$MSG_ERROR_USERNAME_EMPTY"
-        return
-    fi
+    local user_name
+    read_with_validation "$PROMPT_USERNAME_TO_DELETE_EMAIL" user_name "username"
 
     # Verify user exists
     if ! id "$user_name" &>/dev/null; then
