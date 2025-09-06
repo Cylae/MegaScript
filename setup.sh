@@ -45,11 +45,14 @@ print_message() {
         *)         color_code="\033[0m"    ;; # No Color
     esac
 
-    # Print formatted message to stdout and log file
-    printf "%b[%s] [%s] %s\033[0m\n" "$color_code" "$timestamp" "${type^^}" "$message" | tee -a "$LOG_FILE"
+    # The main 'exec' command at the end of the script handles logging to file.
+    # This function just needs to print to the correct stream (stdout or stderr).
     if [[ "$type" == "error" ]]; then
-        # Also print errors to stderr
+        # Print errors to stderr
         printf "%b[%s] [%s] %s\033[0m\n" "$color_code" "$timestamp" "${type^^}" "$message" >&2
+    else
+        # Print other messages to stdout
+        printf "%b[%s] [%s] %s\033[0m\n" "$color_code" "$timestamp" "${type^^}" "$message"
     fi
 }
 
@@ -281,7 +284,7 @@ EOF
         print_message "error" "Nginx configuration test failed. Please check $nginx_conf"
         # Clean up failed config
         rm -f "$nginx_conf"
-        rm -f "/etc/nginx/sites-enabled/$domain_name"
+        rm -f "/etc/nginx/sites-enabled/${domain_name}.conf"
         return 1
     fi
 
@@ -504,15 +507,21 @@ EOF
     fi
 
     # The chroot directory itself must be root-owned with 755 permissions.
-    # The user will need a writable subdirectory inside.
     chmod 755 "$sftp_dir"
+
+    # Create a writable subdirectory for the user
+    local writable_dir="${sftp_dir}/public_html"
+    print_message "info" "Creating writable directory at ${writable_dir}..."
+    mkdir -p "$writable_dir"
+    chown "${sftp_user}:www-data" "$writable_dir"
+    chmod 755 "$writable_dir"
+    print_message "success" "Writable directory created."
 
     # Restart SSH service
     print_message "info" "Restarting SSH service..."
     systemctl restart sshd
     print_message "success" "SSH service restarted."
-    print_message "success" "SFTP user '$sftp_user' is ready to connect."
-    print_message "warn" "Remember to create a writable subdirectory inside '$sftp_dir' owned by '$sftp_user:www-data' if one doesn't exist."
+    print_message "success" "SFTP user '$sftp_user' is ready. User is jailed to '${sftp_dir}' and has write access to '${writable_dir}'."
 }
 
 # Backs up a website's files and database
@@ -561,8 +570,11 @@ backup_website() {
     print_message "success" "Database dumped successfully."
 
     # Create archive of web files
-    print_message "info" "Archiving web root '$web_root'..."
-    cp -a "$web_root" "$temp_dir/"
+    print_message "info" "Archiving web root contents from '$web_root'..."
+    mkdir -p "${temp_dir}/web_root_content"
+    # Copy contents of web_root, not the directory itself, to allow for flexible restore.
+    # The `/.` ensures that the contents of the directory are copied, not the directory itself.
+    cp -a "${web_root}/." "${temp_dir}/web_root_content/"
 
     # Create final combined archive
     print_message "info" "Creating final backup file at '$backup_file'..."
@@ -610,18 +622,25 @@ restore_website() {
     tar -xzf "$backup_file" -C "$temp_dir"
 
     # Restore Files
-    if [ -d "${temp_dir}/${domain_name}" ]; then
+    local backup_content_dir="${temp_dir}/web_root_content"
+    if [ -d "$backup_content_dir" ]; then
         print_message "info" "Restoring files to '$web_root'..."
         # Safety: move existing directory
         if [ -d "$web_root" ]; then
             mv "$web_root" "${web_root}.bak-$(date "+%Y%m%d%H%M%S")"
-            print_message "info" "Existing directory moved to '${web_root}.bak-...'."
+            print_message "info" "Existing web root moved to '${web_root}.bak-...'."
         fi
-        mv "${temp_dir}/${domain_name}" "$(dirname "$web_root")/"
+
+        # Create the new web root and copy contents from the backup.
+        mkdir -p "$web_root"
+        # Using cp -a with /.' to copy all contents including hidden files.
+        cp -a "${backup_content_dir}/." "$web_root/"
+
         chown -R www-data:www-data "$web_root"
         print_message "success" "Files restored."
     else
-        print_message "warn" "No directory named '$domain_name' found in backup archive. Skipping file restore."
+        print_message "warn" "No 'web_root_content' directory found in backup archive. Skipping file restore."
+        print_message "info" "Note: This script may not be able to restore backups made with older versions."
     fi
 
     # Restore Database
