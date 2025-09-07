@@ -264,7 +264,8 @@ secure_mariadb() {
     local db_root_password=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20)
 
     # Non-interactive security script
-    mysql -u root <<-EOF
+    # Use sudo to ensure it works with socket authentication
+    sudo mysql -u root <<-EOF
 -- Set root password
 ALTER USER 'root'@'localhost' IDENTIFIED BY '${db_root_password}';
 -- Remove anonymous users
