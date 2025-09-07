@@ -67,7 +67,7 @@ read_with_validation() {
     local prompt_msg="$1"
     local -n var_name="$2" # Nameref to assign to the variable in the caller's scope
     local type="$3"
-    local error_msg="$4" # Optional custom error message
+    local error_msg="${4:-}" # Optional custom error message
     local regex
 
     case "$type" in
@@ -178,6 +178,9 @@ detect_os() {
 # This function will be called by option 1 in the menu
 run_initial_setup() {
     print_message "warn" "$MSG_WARN_INITIAL_SETUP"
+    printf "\n"
+    print_message "info" "$MSG_INITIAL_SETUP_OVERVIEW"
+    printf "\n"
     local confirmation_prompt="$PROMPT_ARE_YOU_SURE"
     read -p "$confirmation_prompt " confirmation
     if [[ ! "$confirmation" =~ ^[yYoO](es|ui)?$ ]]; then
@@ -199,6 +202,7 @@ setup_firewall() {
         print_message "warn" "$MSG_WARN_UFW_NOT_FOUND"
         return
     fi
+    print_message "info" "$MSG_FIREWALL_EXPLANATION"
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow ssh
@@ -212,6 +216,7 @@ setup_firewall() {
 # Installs Nginx, MariaDB, and PHP
 setup_lemp_stack() {
     print_message "info" "$MSG_INFO_INSTALLING_LEMP"
+    print_message "info" "$MSG_LEMP_EXPLANATION"
     if [[ "$PKG_MANAGER" == "apt-get" ]]; then
         # Debian/Ubuntu
         print_message "info" "$MSG_INFO_UPDATING_PACKAGES"
@@ -260,11 +265,13 @@ setup_lemp_stack() {
 # Secures the MariaDB installation
 secure_mariadb() {
     print_message "info" "$MSG_INFO_SECURING_MARIADB"
-    # Generate a secure root password
+    print_message "info" "$MSG_MARIADB_SECURITY_EXPLANATION"
+
     local db_root_password=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20)
 
     # Non-interactive security script
-    mysql -u root <<-EOF
+    # Use sudo to ensure it works with socket authentication
+    sudo mysql -u root <<-EOF
 -- Set root password
 ALTER USER 'root'@'localhost' IDENTIFIED BY '${db_root_password}';
 -- Remove anonymous users
@@ -278,14 +285,26 @@ DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
 FLUSH PRIVILEGES;
 EOF
 
-    print_message "success" "$MSG_SUCCESS_MARIADB_SECURED"
-    print_message "warn" "$MSG_WARN_MARIADB_ROOT_PASSWORD_SET"
-    local msg; msg=$(printf "$MSG_WARN_MARIADB_ROOT_PASSWORD_IS" "$db_root_password")
-    print_message "warn" "$msg"
+    print_message "warn" "=============================================================="
+    print_message "warn" "       $MSG_MARIADB_PASSWORD_NOTICE_HEADER"
+    print_message "warn" "=============================================================="
+    printf "\n"
+    # Using printf for better formatting control
+    printf "  %s\n" "$MSG_MARIADB_PASSWORD_NOTICE_BODY"
+    printf "\n      MariaDB root password: %s\n\n" "$db_root_password"
+    print_message "warn" "=============================================================="
+
     # Save the password to a file for future script use, with strict permissions.
     echo "${db_root_password}" > /root/.mysql_root_password
     chmod 600 /root/.mysql_root_password
     print_message "info" "$MSG_INFO_MARIADB_PASSWORD_SAVED"
+
+    printf "\n"
+    read -n 1 -s -r -p "$MSG_MARIADB_PASSWORD_CONFIRM"
+    echo
+    echo
+
+    print_message "success" "$MSG_SUCCESS_MARIADB_SECURED"
 }
 
 # Adds a new website with an Nginx server block and SSL
@@ -379,6 +398,7 @@ setup_ssl_for_domain() {
     local email=$2
     local msg; msg=$(printf "$MSG_INFO_SETTING_UP_SSL" "$domain_name")
     print_message "info" "$msg"
+    print_message "info" "$MSG_CERTBOT_EXPLANATION"
 
     # Install Certbot if not present
     if ! command -v certbot &> /dev/null; then
@@ -462,6 +482,7 @@ setup_mail_server_logic() {
     print_message "success" "$MSG_SUCCESS_MAIL_SERVER_INSTALLED"
 
     # --- Postfix Configuration ---
+    print_message "info" "$MSG_MAIL_POSTFIX_EXPLANATION"
     print_message "info" "$MSG_INFO_CONFIGURING_POSTFIX_MAIN"
     postconf -e "myhostname = $mail_hostname"
     postconf -e "mydomain = $mail_domain"
@@ -503,6 +524,7 @@ setup_mail_server_logic() {
     print_message "success" "$MSG_SUCCESS_POSTFIX_CONFIGURED"
 
     # --- Dovecot Configuration ---
+    print_message "info" "$MSG_MAIL_DOVECOT_EXPLANATION"
     print_message "info" "$MSG_INFO_CONFIGURING_DOVECOT"
     augtool --autosave <<EOF
 set /files/etc/dovecot/conf.d/10-mail.conf/mail_location "maildir:~/Maildir"
@@ -532,6 +554,7 @@ EOF
     print_message "success" "$MSG_SUCCESS_DOVECOT_CONFIGURED"
 
     # --- Firewall & Services ---
+    print_message "info" "$MSG_MAIL_FIREWALL_EXPLANATION"
     print_message "info" "$MSG_INFO_OPENING_MAIL_PORTS"
     if command -v ufw &> /dev/null; then
         ufw allow 25/tcp  # SMTP
@@ -564,6 +587,7 @@ create_sftp_user() {
     fi
 
     local sftp_dir
+    print_message "info" "$MSG_SFTP_JAIL_EXPLANATION"
     read_with_validation "$PROMPT_ENTER_SFTP_DIR" sftp_dir "path"
     if [ ! -d "$sftp_dir" ]; then
         local msg; msg=$(printf "$MSG_ERROR_DIR_NOT_EXIST" "$sftp_dir")
@@ -883,20 +907,25 @@ show_main_menu() {
     print_message "info" "      $MENU_MAIN_TITLE"
     print_message "info" "$MENU_MAIN_HEADER"
     echo
-    echo " $MENU_SECTION_INITIAL"
-    echo "  $MENU_OPTION_1"
-    echo "  $MENU_OPTION_2"
-    echo "  $MENU_OPTION_3"
-    echo "  $MENU_OPTION_4"
-    echo "  $MENU_OPTION_5"
+    echo " $MENU_SECTION_SETUP"
+    echo "  1. $MENU_OPTION_INITIAL_SETUP"
+    echo "  2. $MENU_OPTION_SETUP_MAIL_SERVER"
+    echo "  3. $MENU_OPTION_FAIL2BAN"
+    echo
+    echo " $MENU_SECTION_WEBSITE"
+    echo "  4. $MENU_OPTION_ADD_WEBSITE"
+    echo "  5. $MENU_OPTION_MANAGE_WEBSITES"
+    echo
+    echo " $MENU_SECTION_USERS"
+    echo "  6. $MENU_OPTION_CREATE_SFTP_USER"
+    echo "  7. $MENU_OPTION_MANAGE_SFTP_USERS"
+    echo "  8. $MENU_OPTION_MANAGE_MAIL_USERS"
     echo
     echo " $MENU_SECTION_UTILS"
-    echo "  $MENU_OPTION_6"
-    echo "  $MENU_OPTION_7"
+    echo "  9. $MENU_OPTION_BACKUP"
+    echo " 10. $MENU_OPTION_RESTORE"
     echo
-    echo " $MENU_SECTION_MGMT"
-    echo "  $MENU_OPTION_8"
-    echo "  $MENU_OPTION_9"
+    echo " 11. $MENU_OPTION_EXIT"
     echo
 }
 
@@ -1288,54 +1317,40 @@ manage_mail_users() {
     done
 }
 
-# --- Management Menu ---
-
-show_management_menu() {
-    clear
-    echo
-    print_message "info" "$MENU_MAIN_HEADER"
-    print_message "info" "        $MENU_MGMT_TITLE"
-    print_message "info" "$MENU_MAIN_HEADER"
-    echo
-    echo "  $MENU_MGMT_OPTION_1"
-    echo "  $MENU_MGMT_OPTION_2"
-    echo "  $MENU_MGMT_OPTION_3"
-    echo "  $MENU_MGMT_OPTION_4"
-    echo
-}
-
-run_management_menu() {
-    while true; do
-        show_management_menu
-        read -rp "$PROMPT_CHOOSE_OPTION [1-4]: " choice
-        case $choice in
-            1) manage_websites ;;
-            2) manage_sftp_users ;;
-            3) manage_mail_users ;;
-            4)
-                print_message "info" "$MSG_RETURN_TO_MAIN_MENU"
-                break
-                ;;
-            *)
-                print_message "warn" "$MSG_ERROR_INVALID_OPTION"
-                ;;
-        esac
-        read -n 1 -s -r -p "$MSG_PRESS_ANY_KEY"
-    done
-}
 
 # --- Main Execution Logic ---
 
+# Displays a welcome message before language selection.
+show_welcome_message() {
+    clear
+    local green="\033[0;32m"
+    local yellow="\033[0;33m"
+    local nc="\033[0m" # No Color
+
+    echo -e "${green}===================================================================${nc}"
+    echo -e "${green} Welcome to the Unified Server Setup & Management Script ${nc}"
+    echo -e "${green} Bienvenue dans le script de Configuration & Gestion de Serveur ${nc}"
+    echo -e "${green}===================================================================${nc}"
+    echo
+    echo -e "${yellow}This script helps you set up and manage a complete web server.${nc}"
+    echo -e "${yellow}It is recommended to run this on a fresh server installation and in a 'screen' or 'tmux' session to prevent disconnection issues.${nc}"
+    echo
+    echo -e "${yellow}Ce script vous aide à configurer et gérer un serveur web complet.${nc}"
+    echo -e "${yellow}Il est recommandé de l'utiliser sur une installation fraîche du système et dans une session 'screen' ou 'tmux' pour éviter les problèmes de déconnexion.${nc}"
+    echo
+}
+
 # Asks the user to select a language and sources the corresponding file.
 select_language() {
-    read -p "Please choose a language: [1] English, [2] Français: " lang_choice
+    read -p "Please choose a language / Veuillez choisir une langue: [1] English, [2] Français: " lang_choice
     case $lang_choice in
         2)
             if [ -f "lang/fr.sh" ]; then
                 source "lang/fr.sh"
                 SCRIPT_LANG="fr"
             else
-                echo "[ERROR] French language file (lang/fr.sh) not found. Defaulting to English."
+                # Can't use print_message yet as language files are not sourced.
+                echo "[ERROR] French language file (lang/fr.sh) not found. Defaulting to English." >&2
                 source "lang/en.sh"
             fi
             ;;
@@ -1343,7 +1358,7 @@ select_language() {
             if [ -f "lang/en.sh" ]; then
                 source "lang/en.sh"
             else
-                echo "[ERROR] English language file (lang/en.sh) not found. Exiting."
+                echo "[ERROR] English language file (lang/en.sh) not found. Exiting." >&2
                 exit 1
             fi
             ;;
@@ -1355,6 +1370,7 @@ main() {
     touch "$LOG_FILE"
     chmod 644 "$LOG_FILE"
 
+    show_welcome_message
     select_language
 
     initial_checks
@@ -1362,17 +1378,19 @@ main() {
 
     while true; do
         show_main_menu
-        read -rp "$PROMPT_CHOOSE_OPTION [1-9]: " choice
+        read -rp "$PROMPT_CHOOSE_OPTION [1-11]: " choice
         case $choice in
             1) run_initial_setup ;;
-            2) add_new_website ;;
-            3) setup_mail_server ;;
-            4) create_sftp_user ;;
-            5) setup_fail2ban ;;
-            6) backup_website ;;
-            7) restore_website ;;
-            8) run_management_menu ;;
-            9)
+            2) setup_mail_server ;;
+            3) setup_fail2ban ;;
+            4) add_new_website ;;
+            5) manage_websites ;;
+            6) create_sftp_user ;;
+            7) manage_sftp_users ;;
+            8) manage_mail_users ;;
+            9) backup_website ;;
+            10) restore_website ;;
+            11)
                 print_message "info" "$MSG_EXITING"
                 break
                 ;;
