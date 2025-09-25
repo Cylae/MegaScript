@@ -530,12 +530,12 @@ setup_mail_server_logic() {
 set /files/etc/dovecot/conf.d/10-mail.conf/mail_location "maildir:~/Maildir"
 set /files/etc/dovecot/conf.d/10-auth.conf/auth_mechanisms "plain login"
 
-# Set up authentication socket for Postfix
-set /files/etc/dovecot/conf.d/10-master.conf/service[last()+1] "unix_listener"
-set /files/etc/dovecot/conf.d/10-master.conf/service[last()]/name "/var/spool/postfix/private/auth"
-set /files/etc/dovecot/conf.d/10-master.conf/service[last()]/mode "0660"
-set /files/etc/dovecot/conf.d/10-master.conf/service[last()]/user "postfix"
-set /files/etc/dovecot/conf.d/10-master.conf/service[last()]/group "postfix"
+# Set up authentication socket for Postfix inside the 'auth' service
+defvar auth_service /files/etc/dovecot/conf.d/10-master.conf/service[name='auth']
+set \$auth_service/unix_listener[last()+1] "/var/spool/postfix/private/auth"
+set \$auth_service/unix_listener[last()]/mode "0660"
+set \$auth_service/unix_listener[last()]/user "postfix"
+set \$auth_service/unix_listener[last()]/group "postfix"
 
 # Configure SSL
 set /files/etc/dovecot/conf.d/10-ssl.conf/ssl "required"
