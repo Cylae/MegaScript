@@ -33,12 +33,13 @@ SCRIPT_LANG="en" # Default language
 # Provides colored and timestamped output for script messages.
 # Usage: print_message "info" "This is a simple message."
 # For formatted messages, format the string first:
-#   local msg; msg=$(printf "$VAR_WITH_FORMAT" "value")
+#   local msg; printf -v msg "$VAR_WITH_FORMAT" "value"
 #   print_message "info" "$msg"
 print_message() {
     local type=$1
     local message=$2
-    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+    local timestamp
+    printf -v timestamp '%(%Y-%m-%d %H:%M:%S)T' -1
     local color_code
 
     case "$type" in
@@ -168,7 +169,7 @@ detect_os() {
             print_message "success" "$MSG_SUCCESS_RHEL_BASED"
             ;;
         *)
-            local msg; msg=$(printf "$MSG_ERROR_UNSUPPORTED_OS" "$OS_ID")
+            local msg; printf -v msg "$MSG_ERROR_UNSUPPORTED_OS" "$OS_ID"
             print_message "error" "$msg"
             exit 1
             ;;
@@ -227,7 +228,7 @@ setup_lemp_stack() {
             print_message "warn" "$MSG_ERROR_PHP_FPM_NOT_FOUND"
             local php_packages="php-fpm php-mysql php-curl php-gd php-mbstring php-xml php-zip"
         else
-            local msg; msg=$(printf "$MSG_INFO_PHP_VERSION_DETECTED" "$php_version_short")
+            local msg; printf -v msg "$MSG_INFO_PHP_VERSION_DETECTED" "$php_version_short"
             print_message "info" "$msg"
             local php_packages="php${php_version_short}-fpm php${php_version_short}-mysql php${php_version_short}-curl php${php_version_short}-gd php${php_version_short}-mbstring php${php_version_short}-xml php${php_version_short}-zip"
         fi
@@ -326,7 +327,7 @@ add_new_website_logic() {
     local nginx_conf="/etc/nginx/sites-available/$domain_name.conf"
 
     # Create web root directory and placeholder file
-    local msg; msg=$(printf "$MSG_INFO_CREATING_WEB_ROOT" "$web_root")
+    local msg; printf -v msg "$MSG_INFO_CREATING_WEB_ROOT" "$web_root"
     print_message "info" "$msg"
     mkdir -p "$web_root"
     chown -R www-data:www-data "$web_root"
@@ -368,7 +369,7 @@ server {
     }
 }
 EOF
-    local msg2; msg2=$(printf "$MSG_SUCCESS_NGINX_CONF_CREATED" "$nginx_conf")
+    local msg2; printf -v msg2 "$MSG_SUCCESS_NGINX_CONF_CREATED" "$nginx_conf"
     print_message "success" "$msg2"
 
     # Enable the site
@@ -380,7 +381,7 @@ EOF
         systemctl reload nginx
         print_message "success" "$MSG_SUCCESS_NGINX_RELOADED"
     else
-        local msg3; msg3=$(printf "$MSG_ERROR_NGINX_TEST_FAILED" "$nginx_conf")
+        local msg3; printf -v msg3 "$MSG_ERROR_NGINX_TEST_FAILED" "$nginx_conf"
         print_message "error" "$msg3"
         # Clean up failed config
         rm -f "$nginx_conf"
@@ -396,7 +397,7 @@ EOF
 setup_ssl_for_domain() {
     local domain_name=$1
     local email=$2
-    local msg; msg=$(printf "$MSG_INFO_SETTING_UP_SSL" "$domain_name")
+    local msg; printf -v msg "$MSG_INFO_SETTING_UP_SSL" "$domain_name"
     print_message "info" "$msg"
     print_message "info" "$MSG_CERTBOT_EXPLANATION"
 
@@ -412,15 +413,15 @@ setup_ssl_for_domain() {
     fi
 
     # Obtain certificate
-    local msg2; msg2=$(printf "$MSG_INFO_REQUESTING_CERT" "$domain_name" "$domain_name")
+    local msg2; printf -v msg2 "$MSG_INFO_REQUESTING_CERT" "$domain_name" "$domain_name"
     print_message "info" "$msg2"
 
     # The --nginx flag will automatically edit the Nginx config
     if certbot --nginx --non-interactive --agree-tos --email "$email" -d "$domain_name" -d "www.$domain_name"; then
-        local msg3; msg3=$(printf "$MSG_SUCCESS_SSL_OBTAINED" "$domain_name")
+        local msg3; printf -v msg3 "$MSG_SUCCESS_SSL_OBTAINED" "$domain_name"
         print_message "success" "$msg3"
     else
-        local msg4; msg4=$(printf "$MSG_ERROR_SSL_FAILED" "$domain_name")
+        local msg4; printf -v msg4 "$MSG_ERROR_SSL_FAILED" "$domain_name"
         print_message "error" "$msg4"
         print_message "warn" "$MSG_WARN_SITE_HTTP_ONLY"
         return 1
@@ -499,16 +500,16 @@ setup_mail_server_logic() {
 
     # TLS settings
     if [ -f "/etc/letsencrypt/live/$mail_hostname/fullchain.pem" ]; then
-        local msg; msg=$(printf "$MSG_INFO_FOUND_CERT" "$mail_hostname")
+        local msg; printf -v msg "$MSG_INFO_FOUND_CERT" "$mail_hostname"
         print_message "info" "$msg"
         postconf -e "smtpd_tls_cert_file=/etc/letsencrypt/live/$mail_hostname/fullchain.pem"
         postconf -e "smtpd_tls_key_file=/etc/letsencrypt/live/$mail_hostname/privkey.pem"
         postconf -e "smtpd_tls_security_level = may"
         postconf -e "smtp_tls_security_level = may"
     else
-        local msg2; msg2=$(printf "$MSG_WARN_NO_CERT_FOUND" "$mail_hostname")
+        local msg2; printf -v msg2 "$MSG_WARN_NO_CERT_FOUND" "$mail_hostname"
         print_message "warn" "$msg2"
-        local msg3; msg3=$(printf "$MSG_WARN_CREATE_WEBSITE_FOR_CERT" "$mail_hostname")
+        local msg3; printf -v msg3 "$MSG_WARN_CREATE_WEBSITE_FOR_CERT" "$mail_hostname"
         print_message "warn" "$msg3"
     fi
 
@@ -547,7 +548,7 @@ set /files/etc/dovecot/conf.d/10-ssl.conf/ssl_cert "</etc/letsencrypt/live/$mail
 set /files/etc/dovecot/conf.d/10-ssl.conf/ssl_key "</etc/letsencrypt/live/$mail_hostname/privkey.pem"
 EOF
     else
-        local msg4; msg4=$(printf "$MSG_WARN_DOVECOT_SELF_SIGNED" "$mail_hostname")
+        local msg4; printf -v msg4 "$MSG_WARN_DOVECOT_SELF_SIGNED" "$mail_hostname"
         print_message "warn" "$msg4"
     fi
 
@@ -590,7 +591,7 @@ create_sftp_user() {
     print_message "info" "$MSG_SFTP_JAIL_EXPLANATION"
     read_with_validation "$PROMPT_ENTER_SFTP_DIR" sftp_dir "path"
     if [ ! -d "$sftp_dir" ]; then
-        local msg; msg=$(printf "$MSG_ERROR_DIR_NOT_EXIST" "$sftp_dir")
+        local msg; printf -v msg "$MSG_ERROR_DIR_NOT_EXIST" "$sftp_dir"
         print_message "error" "$msg"
         return
     fi
@@ -608,23 +609,23 @@ create_sftp_user_logic() {
     # --- Chroot Directory Ownership Check ---
     local owner=$(stat -c '%U' "$sftp_dir")
     if [ "$owner" != "root" ]; then
-        local msg; msg=$(printf "$MSG_ERROR_SFTP_JAIL_OWNER" "$sftp_dir")
+        local msg; printf -v msg "$MSG_ERROR_SFTP_JAIL_OWNER" "$sftp_dir"
         print_message "error" "$msg"
         print_message "warn" "$MSG_WARN_SFTP_JAIL_PRACTICE"
         return 1
     fi
 
-    local msg2; msg2=$(printf "$MSG_INFO_CREATING_SFTP_USER" "$sftp_user")
+    local msg2; printf -v msg2 "$MSG_INFO_CREATING_SFTP_USER" "$sftp_user"
     print_message "info" "$msg2"
     install_augeas_if_needed || return 1
 
     # Create user with no shell access and add to www-data group
-    local msg3; msg3=$(printf "$MSG_INFO_USER_EXISTS" "$sftp_user")
+    local msg3; printf -v msg3 "$MSG_INFO_USER_EXISTS" "$sftp_user"
     # Generate an encrypted password to use with useradd
     local encrypted_password
     encrypted_password=$(openssl passwd -1 "$sftp_password")
     useradd --home "$sftp_dir" --shell "/usr/sbin/nologin" --gid "www-data" -p "$encrypted_password" "$sftp_user" &>/dev/null || print_message "info" "$msg3"
-    local msg4; msg4=$(printf "$MSG_SUCCESS_USER_CREATED" "$sftp_user")
+    local msg4; printf -v msg4 "$MSG_SUCCESS_USER_CREATED" "$sftp_user"
     print_message "success" "$msg4"
 
     # Configure sshd_config using augtool
@@ -653,7 +654,7 @@ set \$match_block/Settings/X11Forwarding "no"
 EOF
 
         if augtool --autosave --file "$aug_commands"; then
-            local msg5; msg5=$(printf "$MSG_SUCCESS_SFTP_JAIL_CONFIGURED" "$sftp_user" "$sshd_config_path")
+            local msg5; printf -v msg5 "$MSG_SUCCESS_SFTP_JAIL_CONFIGURED" "$sftp_user" "$sshd_config_path"
             print_message "success" "$msg5"
         else
             print_message "error" "$MSG_ERROR_SSHD_CONFIG_FAILED"
@@ -670,7 +671,7 @@ EOF
 
     # Create a writable subdirectory for the user
     local writable_dir="${sftp_dir}/public_html"
-    local msg6; msg6=$(printf "$MSG_INFO_CREATING_WRITABLE_DIR" "$writable_dir")
+    local msg6; printf -v msg6 "$MSG_INFO_CREATING_WRITABLE_DIR" "$writable_dir"
     print_message "info" "$msg6"
     mkdir -p "$writable_dir"
     chown "${sftp_user}:www-data" "$writable_dir"
@@ -681,7 +682,7 @@ EOF
     print_message "info" "$MSG_INFO_RESTARTING_SSH"
     systemctl restart sshd
     print_message "success" "$MSG_SUCCESS_SSH_RESTARTED"
-    local msg7; msg7=$(printf "$MSG_SUCCESS_SFTP_USER_READY" "$sftp_user" "$sftp_dir" "$writable_dir")
+    local msg7; printf -v msg7 "$MSG_SUCCESS_SFTP_USER_READY" "$sftp_user" "$sftp_dir" "$writable_dir"
     print_message "success" "$msg7"
 }
 
@@ -738,7 +739,7 @@ backup_website() {
 
     local web_root="/var/www/$domain_name"
     if [ ! -d "$web_root" ]; then
-        local msg; msg=$(printf "$MSG_ERROR_WEB_ROOT_NOT_EXIST" "$web_root")
+        local msg; printf -v msg "$MSG_ERROR_WEB_ROOT_NOT_EXIST" "$web_root"
         print_message "error" "$msg"
         return
     fi
@@ -762,11 +763,11 @@ backup_website_logic() {
     local temp_dir
     temp_dir=$(mktemp -d)
 
-    local msg2; msg2=$(printf "$MSG_INFO_STARTING_BACKUP" "$domain_name")
+    local msg2; printf -v msg2 "$MSG_INFO_STARTING_BACKUP" "$domain_name"
     print_message "info" "$msg2"
 
     # Backup database
-    local msg3; msg3=$(printf "$MSG_INFO_DUMPING_DB" "$db_name")
+    local msg3; printf -v msg3 "$MSG_INFO_DUMPING_DB" "$db_name"
     print_message "info" "$msg3"
     if [ ! -f "/root/.mysql_root_password" ]; then
         print_message "error" "$MSG_ERROR_DB_PASS_NOT_FOUND"
@@ -776,7 +777,7 @@ backup_website_logic() {
     local db_root_pw
     db_root_pw=$(cat /root/.mysql_root_password)
     if ! mysqldump -u root -p"${db_root_pw}" "${db_name}" > "${temp_dir}/${db_name}.sql"; then
-        local msg4; msg4=$(printf "$MSG_ERROR_DB_DUMP_FAILED" "$db_name")
+        local msg4; printf -v msg4 "$MSG_ERROR_DB_DUMP_FAILED" "$db_name"
         print_message "error" "$msg4"
         rm -rf "$temp_dir"
         return 1
@@ -784,20 +785,24 @@ backup_website_logic() {
     print_message "success" "$MSG_SUCCESS_DB_DUMPED"
 
     # Create archive of web files
-    local msg5; msg5=$(printf "$MSG_INFO_ARCHIVING_FILES" "$web_root")
+    local msg5; printf -v msg5 "$MSG_INFO_ARCHIVING_FILES" "$web_root"
     print_message "info" "$msg5"
     mkdir -p "${temp_dir}/web_root_content"
     cp -a "${web_root}/." "${temp_dir}/web_root_content/"
 
     # Create final combined archive
-    local msg6; msg6=$(printf "$MSG_INFO_CREATING_BACKUP_FILE" "$backup_file")
+    local msg6; printf -v msg6 "$MSG_INFO_CREATING_BACKUP_FILE" "$backup_file"
     print_message "info" "$msg6"
-    tar -czf "$backup_file" -C "$temp_dir" .
+    tar -czf "$backup_file" -C "$temp_dir" . || {
+        print_message "error" "Tar archiving failed."
+        rm -rf "$temp_dir"
+        return 1
+    }
 
     # Cleanup
     rm -rf "$temp_dir"
 
-    local msg7; msg7=$(printf "$MSG_SUCCESS_BACKUP_COMPLETE" "$backup_file")
+    local msg7; printf -v msg7 "$MSG_SUCCESS_BACKUP_COMPLETE" "$backup_file"
     print_message "success" "$msg7"
 }
 
@@ -809,7 +814,7 @@ restore_website() {
     local backup_file
     read_with_validation "$PROMPT_ENTER_BACKUP_PATH" backup_file "path"
     if [ ! -f "$backup_file" ]; then
-        local msg; msg=$(printf "$MSG_ERROR_BACKUP_FILE_NOT_FOUND" "$backup_file")
+        local msg; printf -v msg "$MSG_ERROR_BACKUP_FILE_NOT_FOUND" "$backup_file"
         print_message "error" "$msg"
         return
     fi
@@ -821,9 +826,9 @@ restore_website() {
     local db_name
     read_with_validation "$PROMPT_ENTER_DB_TO_RESTORE" db_name "db_name"
 
-    local msg2; msg2=$(printf "$MSG_WARN_CONFIRM_RESTORE" "$web_root" "$db_name")
+    local msg2; printf -v msg2 "$MSG_WARN_CONFIRM_RESTORE" "$web_root" "$db_name"
     print_message "warn" "$msg2"
-    local msg3; msg3=$(printf "$PROMPT_CONFIRM_RESTORE" "$domain_name")
+    local msg3; printf -v msg3 "$PROMPT_CONFIRM_RESTORE" "$domain_name"
     read -p "$msg3 " confirmation
     if [ "$confirmation" != "$domain_name" ]; then
         print_message "error" "$MSG_ERROR_CONFIRMATION_FAILED"
@@ -842,25 +847,25 @@ restore_website_logic() {
 
     local temp_dir
     temp_dir=$(mktemp -d)
+
     print_message "info" "$MSG_INFO_EXTRACTING_BACKUP"
     tar -xzf "$backup_file" -C "$temp_dir"
 
     # Restore Files
     local backup_content_dir="${temp_dir}/web_root_content"
     if [ -d "$backup_content_dir" ]; then
-        local msg4; msg4=$(printf "$MSG_INFO_RESTORING_FILES" "$web_root")
+        local msg4; printf -v msg4 "$MSG_INFO_RESTORING_FILES" "$web_root"
         print_message "info" "$msg4"
         # Safety: move existing directory
         if [ -d "$web_root" ]; then
             local bak_dir="${web_root}.bak-$(date "+%Y%m%d%H%M%S")"
             mv "$web_root" "$bak_dir"
-            local msg5; msg5=$(printf "$MSG_INFO_MOVED_EXISTING_ROOT" "$web_root")
+            local msg5; printf -v msg5 "$MSG_INFO_MOVED_EXISTING_ROOT" "$web_root"
             print_message "info" "$msg5"
         fi
 
-        # Create the new web root and copy contents from the backup.
-        mkdir -p "$web_root"
-        cp -a "${backup_content_dir}/." "$web_root/"
+        # Move the extracted contents to be the new web root.
+        mv "${backup_content_dir}" "$web_root"
         chown -R www-data:www-data "$web_root"
         print_message "success" "$MSG_SUCCESS_FILES_RESTORED"
     else
@@ -872,7 +877,7 @@ restore_website_logic() {
     local sql_file
     sql_file=$(find "$temp_dir" -name "*.sql" -type f | head -n 1)
     if [ -n "$sql_file" ]; then
-        local msg6; msg6=$(printf "$MSG_INFO_RESTORING_DB" "$db_name" "$(basename "$sql_file")")
+        local msg6; printf -v msg6 "$MSG_INFO_RESTORING_DB" "$db_name" "$(basename "$sql_file")"
         print_message "info" "$msg6"
         if [ ! -f "/root/.mysql_root_password" ]; then
             print_message "error" "$MSG_ERROR_DB_RESTORE_PASS_NOT_FOUND"
@@ -895,7 +900,8 @@ restore_website_logic() {
 
     # Cleanup
     rm -rf "$temp_dir"
-    local msg7; msg7=$(printf "$MSG_SUCCESS_RESTORE_COMPLETE" "$domain_name")
+
+    local msg7; printf -v msg7 "$MSG_SUCCESS_RESTORE_COMPLETE" "$domain_name"
     print_message "success" "$msg7"
 }
 
@@ -937,29 +943,41 @@ list_nginx_sites() {
     local sites_available="/etc/nginx/sites-available"
     local sites_enabled="/etc/nginx/sites-enabled"
 
-    # Exclude default config and ensure directory exists
-    if [ ! -d "$sites_available" ]; then return; fi
-    local all_sites=$(ls "$sites_available" | grep -v "default" || true)
+    # Ensure directory exists
+    if [ ! -d "$sites_available" ]; then return 1; fi
 
-    if [ -z "$all_sites" ]; then
+    local found_sites=0
+    local sites_output=""
+
+    for site_path in "$sites_available"/*; do
+        [ -e "$site_path" ] || continue
+        local site="${site_path##*/}"
+        [ "$site" = "default" ] && continue
+
+        local symlink_path="$sites_enabled/$site"
+        if [[ "$status" == "enabled" && -L "$symlink_path" ]]; then
+            sites_output+="  - $site $MENU_LIST_WEBSITES_ENABLED\n"
+            found_sites=1
+        elif [[ "$status" == "disabled" && ! -L "$symlink_path" ]]; then
+            sites_output+="  - $site $MENU_LIST_WEBSITES_DISABLED\n"
+            found_sites=1
+        elif [[ "$status" == "all" ]]; then
+            if [ -L "$symlink_path" ]; then
+                sites_output+="  - $site $MENU_LIST_WEBSITES_ENABLED\n"
+            else
+                sites_output+="  - $site $MENU_LIST_WEBSITES_DISABLED\n"
+            fi
+            found_sites=1
+        fi
+    done
+
+    if [ "$found_sites" -eq 0 ]; then
         print_message "warn" "$MSG_NO_WEBSITES_FOUND"
         return 1
     fi
+
     print_message "info" "$MENU_LIST_WEBSITES_HEADER"
-    for site in $all_sites; do
-        local symlink_path="$sites_enabled/$site"
-        if [[ "$status" == "enabled" && -L "$symlink_path" ]]; then
-            echo "  - $site $MENU_LIST_WEBSITES_ENABLED"
-        elif [[ "$status" == "disabled" && ! -L "$symlink_path" ]]; then
-            echo "  - $site $MENU_LIST_WEBSITES_DISABLED"
-        elif [[ "$status" == "all" ]]; then
-            if [ -L "$symlink_path" ]; then
-                echo "  - $site $MENU_LIST_WEBSITES_ENABLED"
-            else
-                echo "  - $site $MENU_LIST_WEBSITES_DISABLED"
-            fi
-        fi
-    done
+    echo -e -n "$sites_output"
     echo "------------------------"
     return 0
 }
@@ -977,9 +995,9 @@ delete_website() {
         return
     fi
 
-    local msg; msg=$(printf "$MSG_WARN_PERMANENT_DELETE" "$domain")
+    local msg; printf -v msg "$MSG_WARN_PERMANENT_DELETE" "$domain"
     print_message "warn" "$msg"
-    local msg2; msg2=$(printf "$PROMPT_CONFIRM_DELETE_WEBSITE" "$domain")
+    local msg2; printf -v msg2 "$PROMPT_CONFIRM_DELETE_WEBSITE" "$domain"
     read -p "$msg2 " confirmation
     if [ "$confirmation" != "$domain" ]; then
         print_message "error" "$MSG_ERROR_CONFIRMATION_FAILED"
@@ -1009,13 +1027,13 @@ delete_website_logic() {
     # Delete web root
     if [ -d "/var/www/$domain" ]; then
         rm -rf "/var/www/$domain"
-        local msg3; msg3=$(printf "$MSG_WEB_ROOT_REMOVED" "$domain")
+        local msg3; printf -v msg3 "$MSG_WEB_ROOT_REMOVED" "$domain"
         print_message "info" "$msg3"
     fi
 
     # Delete SSL certificate
     if command -v certbot &> /dev/null; then
-        local msg4; msg4=$(printf "$MSG_SSL_CERT_DELETED" "$domain")
+        local msg4; printf -v msg4 "$MSG_SSL_CERT_DELETED" "$domain"
         certbot delete --non-interactive --cert-name "$domain" &>/dev/null || print_message "warn" "$msg4"
         print_message "info" "$msg4"
     fi
@@ -1027,13 +1045,13 @@ delete_website_logic() {
         else
             local db_root_pw=$(cat /root/.mysql_root_password)
             mysql -u root -p"${db_root_pw}" -e "DROP DATABASE IF EXISTS \`${db_to_delete}\`;"
-            local msg5; msg5=$(printf "$MSG_DB_DELETED" "$db_to_delete")
+            local msg5; printf -v msg5 "$MSG_DB_DELETED" "$db_to_delete"
             print_message "info" "$msg5"
         fi
     fi
 
     systemctl reload nginx
-    local msg6; msg6=$(printf "$MSG_WEBSITE_DELETED" "$domain")
+    local msg6; printf -v msg6 "$MSG_WEBSITE_DELETED" "$domain"
     print_message "success" "$msg6"
 }
 
@@ -1050,7 +1068,7 @@ disable_website() {
 
     rm -f "/etc/nginx/sites-enabled/$site_conf"
     systemctl reload nginx
-    local msg; msg=$(printf "$MSG_SITE_DISABLED" "$site_conf")
+    local msg; printf -v msg "$MSG_SITE_DISABLED" "$site_conf"
     print_message "success" "$msg"
 }
 
@@ -1067,7 +1085,7 @@ enable_website() {
 
     ln -s "/etc/nginx/sites-available/$site_conf" "/etc/nginx/sites-enabled/"
     systemctl reload nginx
-    local msg; msg=$(printf "$MSG_SITE_ENABLED" "$site_conf")
+    local msg; printf -v msg "$MSG_SITE_ENABLED" "$site_conf"
     print_message "success" "$msg"
 }
 
@@ -1100,8 +1118,8 @@ manage_websites() {
 # Lists SFTP users by parsing sshd_config
 list_sftp_users() {
     print_message "info" "$MSG_JAILED_SFTP_USERS"
-    # This grep command uses a Perl-compatible regex to find usernames after "Match User"
-    local users=$(grep -oP '(?<=^Match User\s)\S+' /etc/ssh/sshd_config || true)
+    # Parse usernames after "Match User "
+    local users=$(awk '/^Match User / {print $3}' /etc/ssh/sshd_config 2>/dev/null || true)
     if [ -z "$users" ]; then
         print_message "warn" "$MSG_NO_SFTP_USERS"
         return 1
@@ -1123,12 +1141,12 @@ change_sftp_password() {
 
     # Verify user exists in the SFTP config
     if ! grep -q "^Match User $sftp_user" /etc/ssh/sshd_config; then
-        local msg; msg=$(printf "$MSG_ERROR_USER_NOT_SFTP" "$sftp_user")
+        local msg; printf -v msg "$MSG_ERROR_USER_NOT_SFTP" "$sftp_user"
         print_message "error" "$msg"
         return
     fi
 
-    local msg2; msg2=$(printf "$PROMPT_NEW_PASSWORD" "$sftp_user")
+    local msg2; printf -v msg2 "$PROMPT_NEW_PASSWORD" "$sftp_user"
     read -s -p "$msg2 " sftp_password
     echo
     if [ -z "$sftp_password" ]; then
@@ -1137,7 +1155,7 @@ change_sftp_password() {
     fi
 
     echo "$sftp_user:$sftp_password" | chpasswd
-    local msg3; msg3=$(printf "$MSG_PASSWORD_CHANGED" "$sftp_user")
+    local msg3; printf -v msg3 "$MSG_PASSWORD_CHANGED" "$sftp_user"
     print_message "success" "$msg3"
 }
 
@@ -1152,14 +1170,14 @@ delete_sftp_user() {
     # Verify user exists in the SFTP config using a more robust check
     local sftp_user_exists=$(augtool get "/files/etc/ssh/sshd_config/Match[Condition/User='$sftp_user']/Condition/User")
     if [ -z "$sftp_user_exists" ]; then
-        local msg; msg=$(printf "$MSG_ERROR_USER_NOT_SFTP" "$sftp_user")
+        local msg; printf -v msg "$MSG_ERROR_USER_NOT_SFTP" "$sftp_user"
         print_message "error" "$msg"
         return
     fi
 
-    local msg2; msg2=$(printf "$MSG_WARN_PERMANENT_DELETE_USER" "$sftp_user")
+    local msg2; printf -v msg2 "$MSG_WARN_PERMANENT_DELETE_USER" "$sftp_user"
     print_message "warn" "$msg2"
-    local msg3; msg3=$(printf "$PROMPT_CONFIRM_DELETE_USER" "$sftp_user")
+    local msg3; printf -v msg3 "$PROMPT_CONFIRM_DELETE_USER" "$sftp_user"
     read -p "$msg3 " confirmation
     if [ "$confirmation" != "$sftp_user" ]; then
         print_message "error" "$MSG_ERROR_CONFIRMATION_FAILED"
@@ -1176,19 +1194,19 @@ delete_sftp_user_logic() {
     # Delete system user
     if id "$sftp_user" &>/dev/null; then
         userdel "$sftp_user"
-        local msg4; msg4=$(printf "$MSG_USER_DELETED" "$sftp_user")
+        local msg4; printf -v msg4 "$MSG_USER_DELETED" "$sftp_user"
         print_message "info" "$msg4"
     else
-        local msg5; msg5=$(printf "$MSG_USER_NOT_FOUND_SKIPPING" "$sftp_user")
+        local msg5; printf -v msg5 "$MSG_USER_NOT_FOUND_SKIPPING" "$sftp_user"
         print_message "warn" "$msg5"
     fi
 
     # Remove sshd_config block using augtool
-    local msg6; msg6=$(printf "$MSG_INFO_REMOVING_SFTP_CONF" "$sftp_user")
+    local msg6; printf -v msg6 "$MSG_INFO_REMOVING_SFTP_CONF" "$sftp_user"
     print_message "info" "$msg6"
     augtool --autosave "rm /files/etc/ssh/sshd_config/Match[Condition/User='$sftp_user']"
     if [ $? -eq 0 ]; then
-        local msg7; msg7=$(printf "$MSG_SUCCESS_SFTP_CONF_REMOVED" "$sftp_user")
+        local msg7; printf -v msg7 "$MSG_SUCCESS_SFTP_CONF_REMOVED" "$sftp_user"
         print_message "success" "$msg7"
     else
         print_message "error" "$MSG_ERROR_REMOVING_SFTP_CONF"
@@ -1198,7 +1216,7 @@ delete_sftp_user_logic() {
     # Restart SSH
     systemctl restart sshd
     print_message "success" "$MSG_SUCCESS_SSH_RESTARTED"
-    local msg8; msg8=$(printf "$MSG_SFTP_USER_DELETED" "$sftp_user")
+    local msg8; printf -v msg8 "$MSG_SFTP_USER_DELETED" "$sftp_user"
     print_message "success" "$msg8"
 }
 
@@ -1260,7 +1278,7 @@ add_mail_user() {
     useradd -m -s /usr/sbin/nologin "$user_name"
     echo "$user_name:$user_password" | chpasswd
 
-    local msg; msg=$(printf "$MSG_SUCCESS_EMAIL_CREATED" "$user_name")
+    local msg; printf -v msg "$MSG_SUCCESS_EMAIL_CREATED" "$user_name"
     print_message "success" "$msg"
 }
 
@@ -1274,14 +1292,14 @@ delete_mail_user() {
 
     # Verify user exists
     if ! id "$user_name" &>/dev/null; then
-        local msg; msg=$(printf "$MSG_ERROR_USER_NOT_EXIST" "$user_name")
+        local msg; printf -v msg "$MSG_ERROR_USER_NOT_EXIST" "$user_name"
         print_message "error" "$msg"
         return
     fi
 
-    local msg2; msg2=$(printf "$MSG_WARN_PERMANENT_DELETE_EMAIL" "$user_name")
+    local msg2; printf -v msg2 "$MSG_WARN_PERMANENT_DELETE_EMAIL" "$user_name"
     print_message "warn" "$msg2"
-    local msg3; msg3=$(printf "$PROMPT_CONFIRM_DELETE_EMAIL" "$user_name")
+    local msg3; printf -v msg3 "$PROMPT_CONFIRM_DELETE_EMAIL" "$user_name"
     read -p "$msg3 " confirmation
     if [ "$confirmation" != "$user_name" ]; then
         print_message "error" "$MSG_ERROR_CONFIRMATION_FAILED"
@@ -1290,7 +1308,7 @@ delete_mail_user() {
 
     # Delete the user and their home directory (-r)
     userdel -r "$user_name"
-    local msg4; msg4=$(printf "$MSG_EMAIL_DELETED" "$user_name")
+    local msg4; printf -v msg4 "$MSG_EMAIL_DELETED" "$user_name"
     print_message "success" "$msg4"
 }
 

@@ -24,8 +24,9 @@ It simplifies complex tasks like setting up a LEMP stack, creating websites with
 *   **Robust Configuration**: Uses `augtool` and `postconf` instead of fragile `sed` commands for safer and more reliable configuration changes.
 *   **Idempotent Operations**: Many operations, like creating SFTP users, are now idempotent, meaning they can be run multiple times without causing errors.
 *   **Enhanced Input Validation**: User input is validated to prevent common errors and ensure data integrity.
-*   **Backup & Restore**: A simple yet powerful utility to back up a website's files and its database into a single archive. A restore function with built-in safety checks is also included.
+*   **Backup & Restore**: A simple yet powerful utility to back up a website's files and its database into a single archive. A restore function with built-in safety checks is also included. Now featuring optimized file moves for restoration.
 *   **Expanded Automated Testing**: The test suite (built with `bats`) has been expanded to cover critical functionalities like backups, restores, and website management, ensuring high reliability.
+*   **Performance & Reliability Improvements**: Optimized logging (removed subshells and external date commands for faster logging), and replaced regex listing of users/sites with faster built-ins.
 
 ### ✅ Prerequisites & Dependencies
 
@@ -136,8 +137,9 @@ Il simplifie des tâches complexes telles que la mise en place d'une pile LEMP, 
 *   **Configuration Robuste**: Utilise `augtool` et `postconf` au lieu de commandes `sed` fragiles pour des modifications de configuration plus sûres et plus fiables.
 *   **Opérations Idempotentes**: De nombreuses opérations, comme la création d'utilisateurs SFTP, sont désormais idempotentes, ce qui signifie qu'elles peuvent être exécutées plusieurs fois sans provoquer d'erreurs.
 *   **Validation d'Entrée Améliorée**: Les entrées de l'utilisateur sont validées pour éviter les erreurs courantes et garantir l'intégrité des données.
-*   **Sauvegarde & Restauration**: Un utilitaire simple mais puissant pour sauvegarder les fichiers d'un site web et sa base de données dans une seule archive. Une fonction de restauration avec des mesures de sécurité intégrées est également incluse.
+*   **Sauvegarde & Restauration**: Un utilitaire simple mais puissant pour sauvegarder les fichiers d'un site web et sa base de données dans une seule archive. Une fonction de restauration avec des mesures de sécurité intégrées est également incluse. Comprend désormais des déplacements de fichiers optimisés pour la restauration.
 *   **Tests Automatisés Étendus**: La suite de tests (construite avec `bats`) a été étendue pour couvrir les fonctionnalités critiques telles que les sauvegardes, les restaurations et la gestion de sites web, garantissant une grande fiabilité.
+*   **Améliorations de la Performance et Fiabilité**: Journalisation optimisée (suppression des sous-shells et de la commande date externe pour une journalisation plus rapide), et remplacement des listes regex d'utilisateurs/sites par des commandes intégrées plus rapides.
 
 ### ✅ Prérequis & Dépendances
 
